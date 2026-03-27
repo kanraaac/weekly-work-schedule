@@ -253,7 +253,7 @@ h1 {
 
 .people-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
   gap: 0.5rem;
 }
 
@@ -264,11 +264,12 @@ h1 {
   font-size: 0.85rem;
 }
 
-/** 이름 입력: 표시 너비를 한글 약 4글자 분량으로 제한 */
+/** 이름 입력: 약 8글자 분량 너비 */
 .people-grid input.person-name {
-  width: 4em;
+  width: 8ch;
+  min-width: 8ch;
   max-width: 100%;
-  min-width: 0;
+  box-sizing: border-box;
 }
 
 .person-picker {

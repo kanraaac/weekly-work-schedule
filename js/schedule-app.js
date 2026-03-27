@@ -632,12 +632,116 @@
 
     /** 우클릭으로 메뉴 표시 */
     function openSlotContextMenu(clientX, clientY, key) {
+      hidePersonNameContextMenu();
       slotContextTargetKey = key;
       elSlotCtxMenu.hidden = false;
       elSlotCtxMenu.classList.add("is-open");
       positionSlotContextMenuAt(clientX, clientY);
       requestAnimationFrame(() => positionSlotContextMenuAt(clientX, clientY));
     }
+
+    /** 이름 입력칸 우클릭 메뉴 — 복사·붙여넣기·지우기(텍스트) */
+    const elPersonNameCtxMenu = document.createElement("div");
+    elPersonNameCtxMenu.id = "personNameContextMenu";
+    elPersonNameCtxMenu.className = "slot-context-menu";
+    elPersonNameCtxMenu.setAttribute("role", "menu");
+    elPersonNameCtxMenu.hidden = true;
+    ["복사하기", "붙여넣기", "지우기"].forEach((label, i) => {
+      const actions = ["copy", "paste", "clear"];
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "slot-context-menu-item";
+      btn.dataset.action = actions[i];
+      btn.textContent = label;
+      btn.setAttribute("role", "menuitem");
+      elPersonNameCtxMenu.appendChild(btn);
+    });
+    document.body.appendChild(elPersonNameCtxMenu);
+
+    let personNameCtxTarget = null;
+    /** 이름 칸 간 복사(브라우저 시스템 클립보드와 별개) */
+    let personNameTextClipboard = null;
+
+    function hidePersonNameContextMenu() {
+      personNameCtxTarget = null;
+      elPersonNameCtxMenu.hidden = true;
+      elPersonNameCtxMenu.classList.remove("is-open");
+    }
+
+    function positionPersonNameContextMenuAt(clientX, clientY) {
+      elPersonNameCtxMenu.style.left = `${clientX}px`;
+      elPersonNameCtxMenu.style.top = `${clientY}px`;
+      const rect = elPersonNameCtxMenu.getBoundingClientRect();
+      const pad = 6;
+      let x = clientX;
+      let y = clientY;
+      if (x + rect.width > window.innerWidth - pad) x = window.innerWidth - rect.width - pad;
+      if (y + rect.height > window.innerHeight - pad) y = window.innerHeight - rect.height - pad;
+      if (x < pad) x = pad;
+      if (y < pad) y = pad;
+      elPersonNameCtxMenu.style.left = `${x}px`;
+      elPersonNameCtxMenu.style.top = `${y}px`;
+    }
+
+    function openPersonNameContextMenu(clientX, clientY, inputEl) {
+      hideSlotContextMenu();
+      personNameCtxTarget = inputEl;
+      elPersonNameCtxMenu.hidden = false;
+      elPersonNameCtxMenu.classList.add("is-open");
+      positionPersonNameContextMenuAt(clientX, clientY);
+      requestAnimationFrame(() => positionPersonNameContextMenuAt(clientX, clientY));
+    }
+
+    elPersonNameCtxMenu.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const btn = ev.target && ev.target.closest && ev.target.closest("button[data-action]");
+      if (!btn || !personNameCtxTarget) return;
+      const action = btn.dataset.action;
+      const inp = personNameCtxTarget;
+      const maxLen = inp && inp.maxLength > 0 ? inp.maxLength : 20;
+      try {
+        if (action === "copy") {
+          personNameTextClipboard = inp.value != null ? String(inp.value) : "";
+          hidePersonNameContextMenu();
+          showToast(personNameTextClipboard.trim() ? "이름을 복사했습니다." : "빈 칸을 복사했습니다.");
+          return;
+        }
+        if (action === "paste") {
+          if (personNameTextClipboard === null) {
+            hidePersonNameContextMenu();
+            showToast("복사한 이름이 없습니다. 먼저 복사하기를 선택하세요.");
+            return;
+          }
+          inp.value = String(personNameTextClipboard).slice(0, maxLen);
+          hidePersonNameContextMenu();
+          persist();
+          renderPersonPicker();
+          renderCalendar();
+          showToast("붙여넣었습니다.");
+          return;
+        }
+        if (action === "clear") {
+          inp.value = "";
+          hidePersonNameContextMenu();
+          persist();
+          renderPersonPicker();
+          renderCalendar();
+          showToast("이름을 지웠습니다.");
+        }
+      } catch (e) {
+        console.error("personNameContextMenu", e);
+        hidePersonNameContextMenu();
+        showToast("동작 처리 중 오류가 났습니다. 다시 시도해 주세요.");
+      }
+    });
+
+    elPeople.forEach((inp) => {
+      inp.addEventListener("contextmenu", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openPersonNameContextMenu(ev.clientX, ev.clientY, inp);
+      });
+    });
 
     elSlotCtxMenu.addEventListener("click", (ev) => {
       ev.stopPropagation();
@@ -691,21 +795,28 @@
     document.addEventListener(
       "click",
       (ev) => {
-        if (!elSlotCtxMenu.classList.contains("is-open")) return;
-        if (elSlotCtxMenu.contains(ev.target)) return;
-        hideSlotContextMenu();
+        if (elSlotCtxMenu.classList.contains("is-open") && !elSlotCtxMenu.contains(ev.target)) {
+          hideSlotContextMenu();
+        }
+        if (elPersonNameCtxMenu.classList.contains("is-open") && !elPersonNameCtxMenu.contains(ev.target)) {
+          hidePersonNameContextMenu();
+        }
       },
       true
     );
 
     document.addEventListener("keydown", (ev) => {
-      if (ev.key === "Escape" && elSlotCtxMenu.classList.contains("is-open")) hideSlotContextMenu();
+      if (ev.key === "Escape") {
+        if (elSlotCtxMenu.classList.contains("is-open")) hideSlotContextMenu();
+        if (elPersonNameCtxMenu.classList.contains("is-open")) hidePersonNameContextMenu();
+      }
     });
 
     window.addEventListener(
       "scroll",
       () => {
         if (elSlotCtxMenu.classList.contains("is-open")) hideSlotContextMenu();
+        if (elPersonNameCtxMenu.classList.contains("is-open")) hidePersonNameContextMenu();
       },
       true
     );
