@@ -8,9 +8,9 @@
 
   const SLOT_MINUTES = 30;
   const MULTIPLIER_WEIGHT = 1.5;
-  /** 근무시간 select 범위 (09:00~21:00, 30분 단위) */
-  const WORK_HOUR_SELECT_MIN = 9 * 60;
-  const WORK_HOUR_SELECT_MAX = 21 * 60;
+  /** 근무시간 select 선택 가능 범위 (08:00~22:00, 30분 단위) — 초기값은 아래 DEFAULT_* */
+  const WORK_HOUR_SELECT_MIN = 8 * 60;
+  const WORK_HOUR_SELECT_MAX = 22 * 60;
   const DEFAULT_WORK_START = "09:00";
   const DEFAULT_WORK_END = "21:00";
   const MAX_PEOPLE = 10;
@@ -41,19 +41,29 @@
     "#5eead4", "#fca5a5", "#a5b4fc", "#fde047", "#6ee7b7",
   ];
 
-  /** [startMin, endMin] 구간(포함) 30분 슬롯 시작 시각(분) 목록 */
+  /**
+   * 근무/표시용 슬롯 시작 시각(분) 목록
+   * 종료 시각 endMin은 마감(해당 시각까지 근무)으로 보고, 각 행은 30분 칸의 시작이므로
+   * 마지막 시작은 endMin 직전(예: 09:00~21:00 → 20:30~21:00 칸까지, 21:00 시작 행 없음)
+   */
   function buildSlotMinutesList(startMin, endMin) {
     const list = [];
-    for (let m = startMin; m <= endMin; m += SLOT_MINUTES) {
+    for (let m = startMin; m + SLOT_MINUTES <= endMin; m += SLOT_MINUTES) {
       list.push(m);
     }
     return list;
   }
 
-  /** 구버전 배정 키 `날짜|행번호` 해석용 (당시 08:30~21:00 격자) */
-  const LEGACY_SLOT_MINUTES_LIST = buildSlotMinutesList(8 * 60 + 30, 21 * 60);
+  /** 구버전 배정 키 `날짜|행번호` 해석용 — 당시는 21:00 시작 행까지 포함(구 격자와 동일해야 함) */
+  const LEGACY_SLOT_MINUTES_LIST = (function () {
+    const list = [];
+    for (let m = 8 * 60 + 30; m <= 21 * 60; m += SLOT_MINUTES) {
+      list.push(m);
+    }
+    return list;
+  })();
 
-  /** 근무 시작·종료 select 옵션(09:00~21:00) */
+  /** 근무 시작·종료 select 옵션(08:00~22:00) */
   function populateWorkHourSelect(selectEl) {
     if (!selectEl || selectEl.tagName !== "SELECT") return;
     selectEl.textContent = "";
@@ -372,7 +382,10 @@
       const a = parseHHMMToMinutes(elWorkStart && elWorkStart.value);
       const b = parseHHMMToMinutes(elWorkEnd && elWorkEnd.value);
       if (a == null || b == null) {
-        return buildSlotMinutesList(WORK_HOUR_SELECT_MIN, WORK_HOUR_SELECT_MAX);
+        const ds = parseHHMMToMinutes(DEFAULT_WORK_START);
+        const de = parseHHMMToMinutes(DEFAULT_WORK_END);
+        if (ds == null || de == null) return buildSlotMinutesList(9 * 60, 21 * 60);
+        return buildSlotMinutesList(ds, de);
       }
       let s0 = snapMinutesToHalfHourGrid(Math.min(a, b));
       let s1 = snapMinutesToHalfHourGrid(Math.max(a, b));

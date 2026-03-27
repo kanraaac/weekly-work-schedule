@@ -10,7 +10,7 @@
 <body>
   <div class="app">
     <h1>주간 근무 스케줄</h1>
-    <p class="sub">최대 10명 · 달력은 월~토만 표시 · 근무시간은 09:00~21:00(30분 단위)에서 선택해 표 행 수와 집계가 바뀝니다 · 토요일은 기본 1.5배 집계 · 평일 1.5배·점심은 상단 기간·파일 영역에서 설정</p>
+    <p class="sub">최대 10명 · 달력은 월~토만 표시 · 근무시간은 기본 09:00~21:00이며 08:00~22:00(30분 단위)까지 선택 가능 — 표 행 수와 집계에 반영됩니다 · 토요일은 기본 1.5배 집계 · 평일 1.5배·점심은 상단 기간·파일 영역에서 설정</p>
 
     <section class="panel range-file-panel" aria-labelledby="lbl-range">
       <h2 id="lbl-range">기간·파일·초기화</h2>
@@ -42,7 +42,7 @@
           <h3 id="lbl-weekday-mul">시간 설정</h3>
           <div class="aside-row">
             <span class="aside-label">근무시간</span>
-            <div class="aside-time-range" title="표·통계에 쓰이는 하루 슬롯 범위(30분 단위)">
+            <div class="aside-time-range" title="표·통계에 쓰이는 하루 슬롯(30분 단위, 선택 08:00~22:00)">
               <select class="aside-time-select" id="workStart" aria-label="근무 시작"></select>
               <span class="aside-tilde" aria-hidden="true">~</span>
               <select class="aside-time-select" id="workEnd" aria-label="근무 종료"></select>
