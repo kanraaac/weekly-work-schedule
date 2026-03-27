@@ -1,9 +1,8 @@
-# Render Blueprint: 정적 사이트 (빌드 없음)
-# 대시보드에서 New > Blueprint → 이 레포 연결 시 자동 적용
+# Render Blueprint: 정적 사이트 (저장소 루트 그대로 배포)
+# https://dashboard.render.com → New → Blueprint → 본 레포 선택
 services:
   - type: web
     name: weekly-work-schedule
     runtime: static
-    plan: free
-    buildCommand: ""
+    buildCommand: "echo 'Static site: no build'"
     staticPublishPath: .
