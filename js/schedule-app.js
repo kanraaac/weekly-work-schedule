@@ -164,6 +164,17 @@
     return `${y}-${mo}-${da}`;
   }
 
+  /** 다운로드 파일명용 로컬 날짜·시각(초) — Windows 금지 문자(: 등) 미사용 */
+  function formatDateTimeForFileStamp(d) {
+    const y = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, "0");
+    const da = String(d.getDate()).padStart(2, "0");
+    const h = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+    const s = String(d.getSeconds()).padStart(2, "0");
+    return `${y}${mo}${da}_${h}${mi}${s}`;
+  }
+
   /** YYYY-MM-DD 문자열 파싱 (로컬 자정) */
   function parseDateOnly(s) {
     const [y, m, d] = s.split("-").map(Number);
@@ -829,7 +840,7 @@
         const blob = new Blob([text], { type: "application/json;charset=utf-8" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        const stamp = formatDateOnly(new Date()).replace(/-/g, "");
+        const stamp = formatDateTimeForFileStamp(new Date());
         a.href = url;
         a.download = `근무스케줄_${stamp}.json`;
         document.body.appendChild(a);
