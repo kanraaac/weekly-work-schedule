@@ -1,0 +1,606 @@
+/* 주간 근무 스케줄 달력 — 레이아웃·색·반응형 */
+
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --border: #d8dee9;
+  --text: #1e293b;
+  --muted: #64748b;
+  --accent: #2563eb;
+  --accent-soft: #dbeafe;
+  --slot-empty: #f8fafc;
+  --slot-hover: #e0e7ff;
+  --multiplier: #ea580c;
+  --radius: 8px;
+  --shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Pretendard", "Malgun Gothic", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+.app {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 3rem;
+}
+
+h1 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0 0 0.25rem;
+}
+
+.sub {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-bottom: 1.25rem;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.15rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow);
+}
+
+.panel h2 {
+  font-size: 0.95rem;
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.btn-panel {
+  padding: 0.45rem 0.85rem;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.88rem;
+}
+
+.btn-panel:hover {
+  background: #f8fafc;
+}
+
+.btn-panel.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: #1d4ed8;
+}
+
+.btn-panel.btn-primary:hover {
+  filter: brightness(1.05);
+}
+
+.btn-panel.btn-danger {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.btn-panel.btn-danger:hover {
+  background: #fee2e2;
+}
+
+.file-io-hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0.65rem 0 0.5rem;
+  line-height: 1.45;
+}
+
+.file-io-row {
+  margin-top: 0.25rem;
+  align-items: center;
+}
+
+/** 기간·파일 패널: 좌·우 열을 같은 카드 스타일·그리드로 정렬 */
+.range-file-panel .range-panel-body {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(220px, 280px);
+  gap: 1rem;
+  align-items: stretch;
+}
+
+@media (max-width: 720px) {
+  .range-file-panel .range-panel-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.range-panel-column,
+.range-file-panel .weekday-mul-aside {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+}
+
+.range-file-panel .weekday-mul-aside {
+  width: 100%;
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.range-file-panel .weekday-mul-aside h3 {
+  margin: 0 0 0.75rem;
+  padding: 0;
+  border: none;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.calendar-main {
+  width: 100%;
+  min-width: 280px;
+}
+
+.aside-row {
+  margin-bottom: 0.65rem;
+}
+
+.aside-row:last-child {
+  margin-bottom: 0;
+}
+
+.aside-label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+  line-height: 1.3;
+}
+
+.aside-time-range {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  padding: 0.35rem 0.4rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.aside-tilde {
+  flex: 0 0 auto;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--muted);
+  line-height: 1;
+  padding: 0 0.1rem;
+}
+
+.range-file-panel .weekday-mul-aside select.aside-time-select {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0.4rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background: var(--surface);
+  min-height: 2.25rem;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.range-file-panel .weekday-mul-aside select.aside-time-select:hover {
+  border-color: #94a3b8;
+  background: #fff;
+}
+
+.range-file-panel .weekday-mul-aside select.aside-time-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.22);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.field label {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.field input[type="date"],
+.field input.fp-range-date,
+.field select {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  min-width: 140px;
+}
+
+/** Flatpickr 팝업이 토스트·컨텍스트 메뉴 위에 오도록 */
+.flatpickr-calendar {
+  z-index: 12000;
+}
+
+.people-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  gap: 0.5rem;
+}
+
+.people-grid input {
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+/** 이름 입력: 표시 너비를 한글 약 4글자 분량으로 제한 */
+.people-grid input.person-name {
+  width: 4em;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.person-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.person-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background: var(--slot-empty);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.person-chip:hover {
+  background: var(--slot-hover);
+}
+
+.person-chip.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.person-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.toolbar-hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 0.5rem;
+}
+
+.picker-empty-hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0.25rem 0 0;
+}
+
+.stats-empty-hint {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 0.75rem 0.5rem;
+}
+
+.week-block {
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+}
+
+.week-title {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  padding-left: 0.15rem;
+}
+
+.schedule-table {
+  border-collapse: separate;
+  border-spacing: 4px 5px;
+  width: 100%;
+  min-width: 680px;
+  font-size: 0.72rem;
+  background: #e8edf3;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px;
+  box-sizing: border-box;
+}
+
+.schedule-table th,
+.schedule-table td {
+  border: 1px solid #b8c2ce;
+  text-align: center;
+  vertical-align: middle;
+  background: var(--surface);
+}
+
+.schedule-table th.day-col-sat {
+  background: #fed7aa;
+}
+
+.schedule-table th.time-col {
+  width: 52px;
+  background: #dde4ec;
+  color: var(--text);
+  font-weight: 600;
+  padding: 4px 5px;
+  white-space: nowrap;
+  border-radius: 5px;
+}
+
+.schedule-table th.day-col {
+  background: #c9d3df;
+  padding: 7px 6px;
+  font-weight: 600;
+  border-radius: 5px;
+}
+
+.schedule-table th.day-col.is-out {
+  opacity: 0.45;
+}
+
+.slot-cell {
+  min-width: 72px;
+  min-height: 28px;
+  height: auto;
+  padding: 5px 6px;
+  cursor: pointer;
+  background: var(--slot-empty);
+  position: relative;
+  vertical-align: top;
+  user-select: none;
+  -webkit-user-select: none;
+  border: 1px solid #94a3b8;
+  border-radius: 5px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset;
+}
+
+.slot-cell:hover {
+  filter: brightness(0.96);
+}
+
+.slot-cell.is-out {
+  background: #e2e8f0;
+  border-color: #a8b4c4;
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* 토요일·평일 설정 구간: 1.5배 집계되는 칸 표시 */
+.slot-cell.slot-mul-hour:not(.is-out) {
+  background: #ecfdf5;
+  border-color: #6ee7b7;
+}
+
+.slot-cell.is-lunch {
+  background: #e5e7eb !important;
+  border-color: #9ca3af;
+  cursor: not-allowed;
+  vertical-align: middle;
+  user-select: none;
+  border-radius: 5px;
+}
+
+.slot-inner {
+  width: 100%;
+  min-height: 24px;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 4px;
+  border-radius: 4px;
+  position: relative;
+  padding: 3px 4px;
+  box-sizing: border-box;
+}
+
+.slot-chips-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+/** 셀 오른쪽 고정: 배정된 총 인원 수 */
+.slot-assign-count {
+  flex: 0 0 auto;
+  align-self: center;
+  min-width: 22px;
+  padding: 2px 5px;
+  font-size: 0.56rem;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  color: #fff;
+  background: #475569;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.15);
+}
+
+/* 사람 배정 칸에는 입력 요소 없음(체크박스는 x1.5 전용 열만) */
+.slot-cell .slot-inner input {
+  display: none !important;
+}
+
+/** 배정 인원 전원 표시: 1열 / 2열 / 3열 그리드로 가로·세로 배치 */
+.slot-chips {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  align-content: start;
+}
+
+.slot-chips--cols-1 {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.slot-chips--cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.slot-chips--cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.slot-chip {
+  display: block;
+  font-size: 0.54rem;
+  font-weight: 700;
+  line-height: 1.15;
+  color: #0f172a;
+  padding: 2px 3px;
+  border-radius: 3px;
+  text-align: center;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  min-height: 1.15em;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.12);
+}
+
+.slot-chips--cols-1 .slot-chip {
+  font-size: 0.58rem;
+}
+
+.slot-cell.has-assign .slot-inner {
+  font-weight: 600;
+}
+
+.stats-section {
+  margin-top: 1.5rem;
+}
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.stats-table th,
+.stats-table td {
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.65rem;
+  text-align: left;
+}
+
+.stats-table th {
+  background: #e2e8f0;
+  font-weight: 600;
+}
+
+.stats-table tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.month-breakdown {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/** 배정 칸 우클릭: 복사·붙여넣기·지우기 */
+.slot-context-menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 10.5rem;
+  margin: 0;
+  padding: 0.35rem 0;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.18);
+}
+
+.slot-context-menu-item {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem 1rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--text);
+  text-align: left;
+}
+
+.slot-context-menu-item:hover,
+.slot-context-menu-item:focus {
+  background: var(--accent-soft);
+  outline: none;
+}
+
+.slot-context-menu-item[data-action="clear"] {
+  color: #b91c1c;
+}
+
+.toast {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  padding: 0.65rem 1rem;
+  background: #1e293b;
+  color: #fff;
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+  z-index: 100;
+}
+
+.toast.is-visible {
+  opacity: 1;
+}
+
+@media (max-width: 640px) {
+  .schedule-table {
+    min-width: 100%;
+  }
+}

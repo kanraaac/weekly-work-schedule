@@ -1,0 +1,9 @@
+.DS_Store
+Thumbs.db
+*.log
+.cursor/
+.vscode/
+*.swp
+*.tmp
+.env
+.env.*

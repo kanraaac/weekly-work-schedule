@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>주간 근무 스케줄</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" />
+  <link rel="stylesheet" href="css/schedule.css" />
+</head>
+<body>
+  <div class="app">
+    <h1>주간 근무 스케줄</h1>
+    <p class="sub">최대 10명 · 달력은 월~토만 표시 · 08:30~21:00(30분 단위) · 토요일은 기본 1.5배 집계 · 평일 1.5배·점심 시간은 상단 기간·파일 영역에서 설정</p>
+
+    <section class="panel range-file-panel" aria-labelledby="lbl-range">
+      <h2 id="lbl-range">기간·파일·초기화</h2>
+      <div class="range-panel-body">
+        <div class="range-panel-main range-panel-column">
+          <div class="controls">
+            <div class="field">
+              <label for="rangeStart">시작일</label>
+              <input type="text" id="rangeStart" class="fp-range-date" autocomplete="off" placeholder="YYYY-MM-DD" />
+            </div>
+            <div class="field">
+              <label for="rangeEnd">종료일</label>
+              <input type="text" id="rangeEnd" class="fp-range-date" autocomplete="off" placeholder="YYYY-MM-DD" />
+            </div>
+            <div class="field">
+              <label>&nbsp;</label>
+              <button type="button" id="btnClearWeek" class="btn-panel">기간 내 배정만 삭제</button>
+            </div>
+          </div>
+          <p class="file-io-hint">배정·평일 1.5배·점심 시간·이름·기간·선택 인덱스가 JSON 파일로 저장됩니다.</p>
+          <div class="controls file-io-row">
+            <button type="button" id="btnExportSchedule" class="btn-panel btn-primary">파일로 저장</button>
+            <button type="button" id="btnImportSchedule" class="btn-panel">파일 불러오기</button>
+            <input type="file" id="fileImportSchedule" accept=".json,application/json" hidden />
+            <button type="button" id="btnResetSchedule" class="btn-panel btn-danger">데이터 초기화</button>
+          </div>
+        </div>
+        <aside class="weekday-mul-aside" aria-labelledby="lbl-weekday-mul">
+          <h3 id="lbl-weekday-mul">시간 설정</h3>
+          <div class="aside-row">
+            <span class="aside-label">평일 1.5배</span>
+            <div class="aside-time-range" title="월~금 · 분 단위 00·30만 선택 · 토요일은 항상 1.5배">
+              <select class="aside-time-select" id="weekdayMulStart" aria-label="평일 1.5배 시작"></select>
+              <span class="aside-tilde" aria-hidden="true">~</span>
+              <select class="aside-time-select" id="weekdayMulEnd" aria-label="평일 1.5배 종료"></select>
+            </div>
+          </div>
+          <div class="aside-row">
+            <span class="aside-label">점심 (배정 불가)</span>
+            <div class="aside-time-range" title="월~금 · 분 단위 00·30만 선택 · 해당 구간은 클릭·드래그 불가">
+              <select class="aside-time-select" id="lunchStart" aria-label="점심 시작"></select>
+              <span class="aside-tilde" aria-hidden="true">~</span>
+              <select class="aside-time-select" id="lunchEnd" aria-label="점심 종료"></select>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="lbl-people">
+      <h2 id="lbl-people">이름 (최대 10명)</h2>
+      <div class="people-grid">
+        <div class="field"><label for="p1">1</label><input class="person-name" id="p1" type="text" placeholder="이름" maxlength="20" /></div>
+        <div class="field"><label for="p2">2</label><input class="person-name" id="p2" type="text" placeholder="이름" maxlength="20" /></div>
+        <div class="field"><label for="p3">3</label><input class="person-name" id="p3" type="text" placeholder="이름" maxlength="20" /></div>
+        <div class="field"><label for="p4">4</label><input class="person-name" id="p4" type="text" placeholder="이름" maxlength="20" /></div>
+        <div class="field"><label for="p5">5</label><input class="person-name" id="p5" type="text" placeholder="이름" maxlength="20" /></div>
+        <div class="field"><label for="p6">6</label><input class="person-name" id="p6" type="text" placeholder="이름" maxlength="20" /></div>
+        <div class="field"><label for="p7">7</label><input class="person-name" id="p7" type="text" placeholder="이름" maxlength="20" /></div>
+        <div class="field"><label for="p8">8</label><input class="person-name" id="p8" type="text" placeholder="이름" maxlength="20" /></div>
+        <div class="field"><label for="p9">9</label><input class="person-name" id="p9" type="text" placeholder="이름" maxlength="20" /></div>
+        <div class="field"><label for="p10">10</label><input class="person-name" id="p10" type="text" placeholder="이름" maxlength="20" /></div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="lbl-pick">
+      <h2 id="lbl-pick">배정할 사람 선택</h2>
+      <div id="personPicker" class="person-picker"></div>
+      <p class="toolbar-hint">칸을 누르면 선택한 사람이 그 칸에 추가·다시 누르면 빠집니다. 누른 채 드래그하면 지나가는 칸마다 같은 사람이 추가됩니다. 우클릭으로 복사한 뒤 Ctrl을 누른 채 왼쪽 버튼으로 드래그하면 복사한 배정이 연속 붙여넣기됩니다. 여러 명이면 이름이 격자로 나뉘어 표시됩니다.</p>
+    </section>
+
+    <section class="panel calendar-panel" aria-labelledby="lbl-cal">
+      <h2 id="lbl-cal">주별 달력</h2>
+      <div id="calendarMain" class="calendar-main"></div>
+    </section>
+
+    <section class="panel stats-section" aria-labelledby="lbl-stats">
+      <h2 id="lbl-stats">평균 주간 근무시간 · 월별 근무시간</h2>
+      <p>평균 주간 근무(시간): 주(월요일 기준)마다 합산 후 주 수로 나눈 값입니다. 월별은 YYYY-MM 합계입니다. 토요일·평일 1.5배 구간은 0.75시간, 그 외 평일은 0.5시간입니다. 점심 구간은 배정·집계에 포함되지 않습니다.</p>
+      <div id="statsRoot"></div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/ko.js"></script>
+  <script src="js/schedule-app.js"></script>
+</body>
+</html>
