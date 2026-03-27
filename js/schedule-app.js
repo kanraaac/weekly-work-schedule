@@ -7,9 +7,12 @@
   "use strict";
 
   const SLOT_MINUTES = 30;
-  const DAY_START_MINUTES = 8 * 60 + 30;
-  const DAY_END_MINUTES = 21 * 60;
   const MULTIPLIER_WEIGHT = 1.5;
+  /** 근무시간 select 범위 (09:00~21:00, 30분 단위) */
+  const WORK_HOUR_SELECT_MIN = 9 * 60;
+  const WORK_HOUR_SELECT_MAX = 21 * 60;
+  const DEFAULT_WORK_START = "09:00";
+  const DEFAULT_WORK_END = "21:00";
   const MAX_PEOPLE = 10;
   /** 달력에 표시할 요일 수 (월~토, 일요일 제외) */
   const DISPLAY_DAYS_MON_SAT = 6;
@@ -38,16 +41,39 @@
     "#5eead4", "#fca5a5", "#a5b4fc", "#fde047", "#6ee7b7",
   ];
 
-  /** 하루 시작~종료까지 30분 슬롯의 분(자정 기준) 배열 */
-  function buildDaySlotMinutes() {
+  /** [startMin, endMin] 구간(포함) 30분 슬롯 시작 시각(분) 목록 */
+  function buildSlotMinutesList(startMin, endMin) {
     const list = [];
-    for (let m = DAY_START_MINUTES; m <= DAY_END_MINUTES; m += SLOT_MINUTES) {
+    for (let m = startMin; m <= endMin; m += SLOT_MINUTES) {
       list.push(m);
     }
     return list;
   }
 
-  const SLOT_MINUTES_LIST = buildDaySlotMinutes();
+  /** 구버전 배정 키 `날짜|행번호` 해석용 (당시 08:30~21:00 격자) */
+  const LEGACY_SLOT_MINUTES_LIST = buildSlotMinutesList(8 * 60 + 30, 21 * 60);
+
+  /** 근무 시작·종료 select 옵션(09:00~21:00) */
+  function populateWorkHourSelect(selectEl) {
+    if (!selectEl || selectEl.tagName !== "SELECT") return;
+    selectEl.textContent = "";
+    const frag = document.createDocumentFragment();
+    for (let m = WORK_HOUR_SELECT_MIN; m <= WORK_HOUR_SELECT_MAX; m += SLOT_MINUTES) {
+      const opt = document.createElement("option");
+      const v = minutesToLabel(m);
+      opt.value = v;
+      opt.textContent = v;
+      frag.appendChild(opt);
+    }
+    selectEl.appendChild(frag);
+  }
+
+  /** 근무시간 select 값이 옵션에 없으면 기본으로 */
+  function normalizeWorkHourSelect(selectEl) {
+    if (!selectEl || selectEl.tagName !== "SELECT" || !selectEl.options.length) return;
+    const has = [...selectEl.options].some((o) => o.value === selectEl.value);
+    if (!has) selectEl.value = selectEl.id === "workEnd" ? DEFAULT_WORK_END : DEFAULT_WORK_START;
+  }
 
   /** "HH:MM" → 자정 기준 분 (실패 시 null) */
   function parseHHMMToMinutes(s) {
@@ -98,13 +124,12 @@
    * 1.5배 적용 여부: 토요일(항상), 월~금은 [weekdayStartMin, weekdayEndMin) 반개구간
    * weekdayStartMin >= weekdayEndMin 이면 평일은 구간 없음
    */
-  function isSlotMulFifteenForDate(dateObj, slotIndex, weekdayStartMin, weekdayEndMin) {
+  function isSlotMulFifteenForDate(dateObj, slotStartMin, weekdayStartMin, weekdayEndMin) {
     const dow = dateObj.getDay();
-    const slotMin = SLOT_MINUTES_LIST[slotIndex];
     if (dow === 6) return true;
     if (dow >= 1 && dow <= 5) {
       if (weekdayStartMin >= weekdayEndMin) return false;
-      return slotMin >= weekdayStartMin && slotMin < weekdayEndMin;
+      return slotStartMin >= weekdayStartMin && slotStartMin < weekdayEndMin;
     }
     return false;
   }
@@ -113,13 +138,12 @@
    * 점심 구간과 슬롯이 겹치면 true (월~금만). 시작≥종료면 점심 미사용
    * 슬롯 [slotStart, slotEnd) 와 [lunchStart, lunchEnd) 교집합
    */
-  function isLunchSlotOverlap(dateObj, slotIndex, lunchStartMin, lunchEndMin) {
+  function isLunchSlotOverlap(dateObj, slotStartMin, lunchStartMin, lunchEndMin) {
     const dow = dateObj.getDay();
     if (dow < 1 || dow > 5) return false;
     if (lunchStartMin == null || lunchEndMin == null || lunchStartMin >= lunchEndMin) return false;
-    const slotStart = SLOT_MINUTES_LIST[slotIndex];
-    const slotEnd = slotStart + SLOT_MINUTES;
-    return slotStart < lunchEndMin && slotEnd > lunchStartMin;
+    const slotEnd = slotStartMin + SLOT_MINUTES;
+    return slotStartMin < lunchEndMin && slotEnd > lunchStartMin;
   }
 
   /** Date → YYYY-MM-DD */
@@ -206,9 +230,49 @@
     return keys;
   }
 
-  /** 슬롯 저장 키 */
-  function slotStorageKey(dateStr, slotIndex) {
-    return `${dateStr}|${slotIndex}`;
+  /** 슬롯 저장 키 — slotStartMin: 해당 칸 시작 시각(자정 기준 분) */
+  function slotStorageKey(dateStr, slotStartMin) {
+    return `${dateStr}|${slotStartMin}`;
+  }
+
+  /** 배정 키 두 번째 토큰 → 슬롯 시작 분(구버전 `날짜|행번호` 면 LEGACY 표로 변환) */
+  function slotStartMinFromKey(key) {
+    if (!key || typeof key !== "string") return null;
+    const parts = key.split("|");
+    if (parts.length !== 2) return null;
+    const n = parseInt(parts[1], 10);
+    if (Number.isNaN(n)) return null;
+    if (n >= 0 && n < LEGACY_SLOT_MINUTES_LIST.length) return LEGACY_SLOT_MINUTES_LIST[n];
+    return n;
+  }
+
+  /** localStorage/옛 JSON의 행 번호 키를 `날짜|시작분` 형식으로 통일 */
+  function migrateAssignmentsToMinuteKeys(raw) {
+    if (!raw || typeof raw !== "object") return {};
+    const next = {};
+    Object.keys(raw).forEach((k) => {
+      try {
+        const parts = k.split("|");
+        if (parts.length !== 2) return;
+        const dStr = parts[0];
+        const n = parseInt(parts[1], 10);
+        if (Number.isNaN(n)) return;
+        const startMin = n < LEGACY_SLOT_MINUTES_LIST.length ? LEGACY_SLOT_MINUTES_LIST[n] : n;
+        const nk = `${dStr}|${startMin}`;
+        const ids = getSlotPersonIndexes(raw[k]);
+        if (!ids.length) return;
+        const prev = next[nk];
+        if (prev) {
+          const merged = [...new Set([...getSlotPersonIndexes(prev), ...ids])].sort((a, b) => a - b);
+          next[nk] = { personIndexes: merged };
+        } else {
+          next[nk] = raw[k];
+        }
+      } catch (e) {
+        console.error("migrateAssignmentsToMinuteKeys", k, e);
+      }
+    });
+    return next;
   }
 
   /** 이름이 입력된 사람만(공백 제외) */
@@ -273,6 +337,12 @@
     const elWeekdayMulEnd = document.getElementById("weekdayMulEnd");
     const elLunchStart = document.getElementById("lunchStart");
     const elLunchEnd = document.getElementById("lunchEnd");
+    const elWorkStart = document.getElementById("workStart");
+    const elWorkEnd = document.getElementById("workEnd");
+    populateWorkHourSelect(elWorkStart);
+    populateWorkHourSelect(elWorkEnd);
+    if (elWorkStart) elWorkStart.value = DEFAULT_WORK_START;
+    if (elWorkEnd) elWorkEnd.value = DEFAULT_WORK_END;
     const asideTimeSelects = [elWeekdayMulStart, elWeekdayMulEnd, elLunchStart, elLunchEnd];
     asideTimeSelects.forEach((sel) => populateAsideTimeSelect(sel));
     /* 첫 옵션이 00:00으로 자동 선택되어 !value 체크로는 기본값이 안 들어가므로, localStorage 반영 전에 기본 시각 설정 */
@@ -297,9 +367,28 @@
       return { startMin: sa, endMin: sb };
     }
 
-    function isSlotMulForAssignment(d, slotIndex) {
+    /** 현재 근무시간 설정에 따른 표·집계용 슬롯 시작 시각(분) 배열 */
+    function getWorkSlotMinutesList() {
+      const a = parseHHMMToMinutes(elWorkStart && elWorkStart.value);
+      const b = parseHHMMToMinutes(elWorkEnd && elWorkEnd.value);
+      if (a == null || b == null) {
+        return buildSlotMinutesList(WORK_HOUR_SELECT_MIN, WORK_HOUR_SELECT_MAX);
+      }
+      let s0 = snapMinutesToHalfHourGrid(Math.min(a, b));
+      let s1 = snapMinutesToHalfHourGrid(Math.max(a, b));
+      s0 = Math.max(WORK_HOUR_SELECT_MIN, Math.min(s0, WORK_HOUR_SELECT_MAX));
+      s1 = Math.max(WORK_HOUR_SELECT_MIN, Math.min(s1, WORK_HOUR_SELECT_MAX));
+      if (s0 > s1) {
+        const t = s0;
+        s0 = s1;
+        s1 = t;
+      }
+      return buildSlotMinutesList(s0, s1);
+    }
+
+    function isSlotMulForAssignment(d, slotStartMin) {
       const { startMin, endMin } = getWeekdayMulMinutesBounds();
-      return isSlotMulFifteenForDate(d, slotIndex, startMin, endMin);
+      return isSlotMulFifteenForDate(d, slotStartMin, startMin, endMin);
     }
 
     function getLunchMinutesBounds() {
@@ -309,30 +398,30 @@
       return { startMin: a, endMin: b };
     }
 
-    function isLunchCell(d, slotIndex) {
+    function isLunchCell(d, slotStartMin) {
       const { startMin, endMin } = getLunchMinutesBounds();
-      return isLunchSlotOverlap(d, slotIndex, startMin, endMin);
+      return isLunchSlotOverlap(d, slotStartMin, startMin, endMin);
     }
 
     /** 저장 전 월~금 점심 구간과 겹치는 배정 제거 */
     function pruneLunchAssignments() {
       Object.keys(assignments).forEach((k) => {
-        const [dStr, idxStr] = k.split("|");
+        const dStr = k.split("|")[0];
+        const slotStartMin = slotStartMinFromKey(k);
+        if (slotStartMin == null) return;
         const d = parseDateOnly(dStr);
-        const slotIndex = parseInt(idxStr, 10);
-        if (Number.isNaN(slotIndex)) return;
-        if (isLunchCell(d, slotIndex)) delete assignments[k];
+        if (isLunchCell(d, slotStartMin)) delete assignments[k];
       });
     }
 
     /** 슬롯 키가 월~금 점심이면 배정·페인트 불가(토요일은 점심 없음·1.5배는 유지) */
     function isKeyBlockedByLunch(key) {
       if (!key) return true;
-      const [dStr, idxStr] = key.split("|");
+      const dStr = key.split("|")[0];
+      const slotStartMin = slotStartMinFromKey(key);
+      if (slotStartMin == null) return true;
       const d = parseDateOnly(dStr);
-      const slotIndex = parseInt(idxStr, 10);
-      if (Number.isNaN(slotIndex)) return true;
-      return isLunchCell(d, slotIndex);
+      return isLunchCell(d, slotStartMin);
     }
 
     /** 기간 flatpickr 인스턴스(2달 표시) */
@@ -421,12 +510,13 @@
         });
       }
       if (restored.assignments && typeof restored.assignments === "object") {
-        assignments = {};
+        const tmp = {};
         Object.keys(restored.assignments).forEach((k) => {
           const a = restored.assignments[k];
           const ids = getSlotPersonIndexes(a);
-          if (ids.length) assignments[k] = { personIndexes: ids };
+          if (ids.length) tmp[k] = { personIndexes: ids };
         });
+        assignments = migrateAssignmentsToMinuteKeys(tmp);
       }
       if (typeof restored.weekdayMulStart === "string" && restored.weekdayMulStart.trim() && elWeekdayMulStart) {
         elWeekdayMulStart.value = restored.weekdayMulStart;
@@ -439,6 +529,12 @@
       }
       if (typeof restored.lunchEnd === "string" && restored.lunchEnd.trim() && elLunchEnd) {
         elLunchEnd.value = restored.lunchEnd;
+      }
+      if (typeof restored.workStart === "string" && restored.workStart.trim() && elWorkStart) {
+        elWorkStart.value = restored.workStart;
+      }
+      if (typeof restored.workEnd === "string" && restored.workEnd.trim() && elWorkEnd) {
+        elWorkEnd.value = restored.workEnd;
       }
       if (typeof restored.selectedPersonIndex === "number") {
         selectedPersonIndex = Math.max(-1, Math.min(MAX_PEOPLE - 1, restored.selectedPersonIndex));
@@ -456,6 +552,8 @@
     });
 
     asideTimeSelects.forEach((sel) => normalizeAsideTimeSelect(sel));
+    normalizeWorkHourSelect(elWorkStart);
+    normalizeWorkHourSelect(elWorkEnd);
 
     /** 토스트 메시지 */
     function showToast(msg) {
@@ -617,6 +715,8 @@
         weekdayMulEnd: elWeekdayMulEnd ? elWeekdayMulEnd.value : "",
         lunchStart: elLunchStart ? elLunchStart.value : "",
         lunchEnd: elLunchEnd ? elLunchEnd.value : "",
+        workStart: elWorkStart ? elWorkStart.value : "",
+        workEnd: elWorkEnd ? elWorkEnd.value : "",
         selectedPersonIndex,
       });
     }
@@ -636,6 +736,8 @@
         weekdayMulEnd: elWeekdayMulEnd ? elWeekdayMulEnd.value : "",
         lunchStart: elLunchStart ? elLunchStart.value : "",
         lunchEnd: elLunchEnd ? elLunchEnd.value : "",
+        workStart: elWorkStart ? elWorkStart.value : "",
+        workEnd: elWorkEnd ? elWorkEnd.value : "",
         selectedPersonIndex,
       };
     }
@@ -654,10 +756,20 @@
       }
       assignments = {};
       if (raw.assignments && typeof raw.assignments === "object") {
+        const tmp = {};
         Object.keys(raw.assignments).forEach((k) => {
           const ids = getSlotPersonIndexes(raw.assignments[k]);
-          if (ids.length) assignments[k] = { personIndexes: ids };
+          if (ids.length) tmp[k] = { personIndexes: ids };
         });
+        assignments = migrateAssignmentsToMinuteKeys(tmp);
+      }
+      if (elWorkStart) {
+        elWorkStart.value =
+          typeof raw.workStart === "string" && raw.workStart.trim() ? raw.workStart : DEFAULT_WORK_START;
+      }
+      if (elWorkEnd) {
+        elWorkEnd.value =
+          typeof raw.workEnd === "string" && raw.workEnd.trim() ? raw.workEnd : DEFAULT_WORK_END;
       }
       if (elWeekdayMulStart) {
         elWeekdayMulStart.value =
@@ -683,6 +795,8 @@
         selectedPersonIndex = Math.max(-1, Math.min(MAX_PEOPLE - 1, raw.selectedPersonIndex));
       }
       asideTimeSelects.forEach((sel) => normalizeAsideTimeSelect(sel));
+      normalizeWorkHourSelect(elWorkStart);
+      normalizeWorkHourSelect(elWorkEnd);
       syncFlatpickrRangeFromInputs();
       stripAssignmentExtras();
       persist();
@@ -909,7 +1023,8 @@
      */
     function applyAssignmentsCopyFromPreviousWeek(prevWeekMonday, currWeekMonday, rangeStart, rangeEnd) {
       const namesNow = getNames();
-      const nSlots = SLOT_MINUTES_LIST.length;
+      const slotList = getWorkSlotMinutesList();
+      const nSlots = slotList.length;
       for (let di = 0; di < DISPLAY_DAYS_MON_SAT; di++) {
         const prevD = new Date(prevWeekMonday);
         prevD.setDate(prevD.getDate() + di);
@@ -918,21 +1033,22 @@
 
         if (currD < rangeStart || currD > rangeEnd) continue;
 
-        for (let slotIndex = 0; slotIndex < nSlots; slotIndex++) {
+        for (let si = 0; si < nSlots; si++) {
+          const slotStartMin = slotList[si];
           const currDStr = formatDateOnly(currD);
-          const currKey = slotStorageKey(currDStr, slotIndex);
+          const currKey = slotStorageKey(currDStr, slotStartMin);
 
-          if (isLunchCell(currD, slotIndex)) {
+          if (isLunchCell(currD, slotStartMin)) {
             delete assignments[currKey];
             continue;
           }
 
-          if (prevD < rangeStart || prevD > rangeEnd || isLunchCell(prevD, slotIndex)) {
+          if (prevD < rangeStart || prevD > rangeEnd || isLunchCell(prevD, slotStartMin)) {
             delete assignments[currKey];
             continue;
           }
 
-          const prevKey = slotStorageKey(formatDateOnly(prevD), slotIndex);
+          const prevKey = slotStorageKey(formatDateOnly(prevD), slotStartMin);
           const ids = filterToNamedPersonIndices(namesNow, getSlotPersonIndexes(assignments[prevKey]));
           if (ids.length === 0) delete assignments[currKey];
           else assignments[currKey] = { personIndexes: [...ids] };
@@ -1033,9 +1149,9 @@
         const tbody = document.createElement("tbody");
 
         /** td에 배정 UI·이벤트 장착 */
-        function mountAssignableSlot(host, dStr, dd, slotIndex) {
-          if (isSlotMulForAssignment(dd, slotIndex)) host.classList.add("slot-mul-hour");
-          const key = slotStorageKey(dStr, slotIndex);
+        function mountAssignableSlot(host, dStr, dd, slotStartMin) {
+          if (isSlotMulForAssignment(dd, slotStartMin)) host.classList.add("slot-mul-hour");
+          const key = slotStorageKey(dStr, slotStartMin);
           const names = getNames();
           const indexes = filterToNamedPersonIndices(names, getSlotPersonIndexes(assignments[key]));
 
@@ -1115,7 +1231,7 @@
         }
 
         /** 한 슬롯 행의 월~토 칸 추가 */
-        function appendDayCellsForSlot(trEl, slotIndex) {
+        function appendDayCellsForSlot(trEl, slotStartMin) {
           for (let di = 0; di < DISPLAY_DAYS_MON_SAT; di++) {
             const dd = new Date(ws);
             dd.setDate(dd.getDate() + di);
@@ -1125,7 +1241,7 @@
             const td = document.createElement("td");
             td.className = "slot-cell" + (isOut ? " is-out" : "");
 
-            const lunchHere = !isOut && isLunchCell(dd, slotIndex);
+            const lunchHere = !isOut && isLunchCell(dd, slotStartMin);
             if (lunchHere) td.classList.add("is-lunch");
 
             if (!isOut && lunchHere) {
@@ -1133,20 +1249,22 @@
               continue;
             }
 
-            if (!isOut) mountAssignableSlot(td, dStr, dd, slotIndex);
+            if (!isOut) mountAssignableSlot(td, dStr, dd, slotStartMin);
 
             trEl.appendChild(td);
           }
         }
 
-        const nSlots = SLOT_MINUTES_LIST.length;
-        for (let slotIndex = 0; slotIndex < nSlots; slotIndex++) {
+        const slotList = getWorkSlotMinutesList();
+        const nSlots = slotList.length;
+        for (let si = 0; si < nSlots; si++) {
+          const slotStartMin = slotList[si];
           const tr = document.createElement("tr");
           const tTime = document.createElement("th");
           tTime.className = "time-col";
-          tTime.textContent = minutesToLabel(SLOT_MINUTES_LIST[slotIndex]);
+          tTime.textContent = minutesToLabel(slotStartMin);
           tr.appendChild(tTime);
-          appendDayCellsForSlot(tr, slotIndex);
+          appendDayCellsForSlot(tr, slotStartMin);
           tbody.appendChild(tr);
         }
         tbl.appendChild(tbody);
@@ -1174,6 +1292,7 @@
       const numWeeks = weekKeys.length || 1;
 
       const names = getNames();
+      const workSlotSet = new Set(getWorkSlotMinutesList());
 
       const perPersonWeekTotals = Array.from({ length: MAX_PEOPLE }, () =>
         Object.fromEntries(weekKeys.map((k) => [k, 0]))
@@ -1183,18 +1302,19 @@
       );
 
       Object.keys(assignments).forEach((key) => {
-        const [dStr, idxStr] = key.split("|");
-        const slotIndex = parseInt(idxStr, 10);
+        const dStr = key.split("|")[0];
+        const slotStartMin = slotStartMinFromKey(key);
         const d = parseDateOnly(dStr);
         if (d < start || d > end) return;
         if (d.getDay() === 0) return;
-        if (Number.isNaN(slotIndex)) return;
-        if (isLunchCell(d, slotIndex)) return;
+        if (slotStartMin == null) return;
+        if (!workSlotSet.has(slotStartMin)) return;
+        if (isLunchCell(d, slotStartMin)) return;
 
         const ids = filterToNamedPersonIndices(names, getSlotPersonIndexes(assignments[key]));
         if (!ids.length) return;
 
-        const h = effectiveHours(isSlotMulForAssignment(d, slotIndex));
+        const h = effectiveHours(isSlotMulForAssignment(d, slotStartMin));
         const wk = weekKeyFromDate(d);
         const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
         ids.forEach((pid) => {
@@ -1273,6 +1393,9 @@
       renderCalendar();
     }
     asideTimeSelects.forEach((el) => {
+      el?.addEventListener("change", onScheduleTimeChange);
+    });
+    [elWorkStart, elWorkEnd].forEach((el) => {
       el?.addEventListener("change", onScheduleTimeChange);
     });
     elPeople.forEach((inp) => {
