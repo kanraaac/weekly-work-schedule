@@ -20,6 +20,19 @@
   const DEFAULT_WEEKDAY_MUL_END = "21:00";
   const DEFAULT_LUNCH_START = "12:30";
   const DEFAULT_LUNCH_END = "14:00";
+  /** 이름 칸 초기값(1~7번, 8~10은 빈칸) — 비어 있을 때만 채움 */
+  const DEFAULT_PERSON_NAMES = [
+    "김유진",
+    "박수영",
+    "심다혜",
+    "기유라",
+    "김찬미",
+    "최예리",
+    "장설아",
+    "",
+    "",
+    "",
+  ];
   const PERSON_COLORS = [
     "#93c5fd", "#86efac", "#fcd34d", "#f9a8d4", "#c4b5fd",
     "#5eead4", "#fca5a5", "#a5b4fc", "#fde047", "#6ee7b7",
@@ -432,6 +445,16 @@
       }
     }
 
+    /** localStorage·불러오기 반영 후에도 비어 있는 칸이면 기본 이름 표시 */
+    elPeople.forEach((inp, i) => {
+      try {
+        const nm = DEFAULT_PERSON_NAMES[i];
+        if (!(inp.value || "").trim() && nm) inp.value = nm;
+      } catch (e) {
+        console.error("default person name slot", e);
+      }
+    });
+
     asideTimeSelects.forEach((sel) => normalizeAsideTimeSelect(sel));
 
     /** 토스트 메시지 */
@@ -668,8 +691,11 @@
       showToast("파일에서 불러왔습니다.");
     }
 
-    /** 스케줄을 JSON 파일로 다운로드 */
-    function exportScheduleToFile() {
+    /**
+     * JSON 스냅샷을 파일로 내려받기
+     * @param {boolean} isSkipToast 닫기 직전 등 토스트를 띄울 수 없을 때 true
+     */
+    function downloadScheduleExportJson(isSkipToast) {
       try {
         const payload = buildExportPayload();
         const text = JSON.stringify(payload, null, 2);
@@ -683,11 +709,16 @@
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        showToast("파일로 저장했습니다.");
+        if (!isSkipToast) showToast("파일로 저장했습니다.");
       } catch (e) {
-        console.error("exportScheduleToFile", e);
-        showToast("파일 저장 중 오류가 났습니다. 다시 시도해 주세요.");
+        console.error("downloadScheduleExportJson", e);
+        if (!isSkipToast) showToast("파일 저장 중 오류가 났습니다. 다시 시도해 주세요.");
       }
+    }
+
+    /** 스케줄을 JSON 파일로 다운로드 */
+    function exportScheduleToFile() {
+      downloadScheduleExportJson(false);
     }
 
     /** JSON 파일 내용 파싱 후 적용 */
@@ -1254,6 +1285,27 @@
 
     document.getElementById("btnExportSchedule")?.addEventListener("click", () => {
       exportScheduleToFile();
+    });
+
+    /** 새로고침과 탭 닫기 구분(완벽하진 않으나 F5 시 매번 다운로드되는 것을 줄임) */
+    function isLikelyPageReload() {
+      try {
+        if (typeof performance.navigation !== "undefined" && performance.navigation.type === 1) return true;
+        const ent = performance.getEntriesByType("navigation")[0];
+        return Boolean(ent && ent.type === "reload");
+      } catch (e) {
+        return false;
+      }
+    }
+
+    /** 창·탭을 닫거나 다른 페이지로 갈 때 저장 확정 후 JSON 다운로드 시도(브라우저·설정에 따라 차단 가능) */
+    window.addEventListener("pagehide", (ev) => {
+      try {
+        persist();
+        if (!ev.persisted && !isLikelyPageReload()) downloadScheduleExportJson(true);
+      } catch (err) {
+        console.error("pagehide auto export", err);
+      }
     });
 
     const elFileImport = document.getElementById("fileImportSchedule");
