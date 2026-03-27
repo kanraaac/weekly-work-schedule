@@ -15,8 +15,8 @@
   const DISPLAY_DAYS_MON_SAT = 6;
   const STORAGE_KEY = "clinicSchedule_v1";
   const EXPORT_FILE_VERSION = 1;
-  /** 시간 설정 기본값(30분 격자) */
-  const DEFAULT_WEEKDAY_MUL_START = "18:00";
+  /** 시간 설정 기본값(30분 격자) — 평일 1.5배·점심 초기 셀렉트 */
+  const DEFAULT_WEEKDAY_MUL_START = "18:30";
   const DEFAULT_WEEKDAY_MUL_END = "21:00";
   const DEFAULT_LUNCH_START = "12:30";
   const DEFAULT_LUNCH_END = "14:00";
@@ -262,6 +262,11 @@
     const elLunchEnd = document.getElementById("lunchEnd");
     const asideTimeSelects = [elWeekdayMulStart, elWeekdayMulEnd, elLunchStart, elLunchEnd];
     asideTimeSelects.forEach((sel) => populateAsideTimeSelect(sel));
+    /* 첫 옵션이 00:00으로 자동 선택되어 !value 체크로는 기본값이 안 들어가므로, localStorage 반영 전에 기본 시각 설정 */
+    if (elWeekdayMulStart) elWeekdayMulStart.value = DEFAULT_WEEKDAY_MUL_START;
+    if (elWeekdayMulEnd) elWeekdayMulEnd.value = DEFAULT_WEEKDAY_MUL_END;
+    if (elLunchStart) elLunchStart.value = DEFAULT_LUNCH_START;
+    if (elLunchEnd) elLunchEnd.value = DEFAULT_LUNCH_END;
     const elStats = document.getElementById("statsRoot");
     const elToast = document.getElementById("toast");
     const elPicker = document.getElementById("personPicker");
@@ -410,16 +415,16 @@
           if (ids.length) assignments[k] = { personIndexes: ids };
         });
       }
-      if (typeof restored.weekdayMulStart === "string" && elWeekdayMulStart) {
+      if (typeof restored.weekdayMulStart === "string" && restored.weekdayMulStart.trim() && elWeekdayMulStart) {
         elWeekdayMulStart.value = restored.weekdayMulStart;
       }
-      if (typeof restored.weekdayMulEnd === "string" && elWeekdayMulEnd) {
+      if (typeof restored.weekdayMulEnd === "string" && restored.weekdayMulEnd.trim() && elWeekdayMulEnd) {
         elWeekdayMulEnd.value = restored.weekdayMulEnd;
       }
-      if (typeof restored.lunchStart === "string" && elLunchStart) {
+      if (typeof restored.lunchStart === "string" && restored.lunchStart.trim() && elLunchStart) {
         elLunchStart.value = restored.lunchStart;
       }
-      if (typeof restored.lunchEnd === "string" && elLunchEnd) {
+      if (typeof restored.lunchEnd === "string" && restored.lunchEnd.trim() && elLunchEnd) {
         elLunchEnd.value = restored.lunchEnd;
       }
       if (typeof restored.selectedPersonIndex === "number") {
@@ -427,10 +432,6 @@
       }
     }
 
-    if (elWeekdayMulStart && !elWeekdayMulStart.value) elWeekdayMulStart.value = DEFAULT_WEEKDAY_MUL_START;
-    if (elWeekdayMulEnd && !elWeekdayMulEnd.value) elWeekdayMulEnd.value = DEFAULT_WEEKDAY_MUL_END;
-    if (elLunchStart && !elLunchStart.value) elLunchStart.value = DEFAULT_LUNCH_START;
-    if (elLunchEnd && !elLunchEnd.value) elLunchEnd.value = DEFAULT_LUNCH_END;
     asideTimeSelects.forEach((sel) => normalizeAsideTimeSelect(sel));
 
     /** 토스트 메시지 */
@@ -635,25 +636,29 @@
           if (ids.length) assignments[k] = { personIndexes: ids };
         });
       }
-      if (elWeekdayMulStart && typeof raw.weekdayMulStart === "string") {
-        elWeekdayMulStart.value = raw.weekdayMulStart;
+      if (elWeekdayMulStart) {
+        elWeekdayMulStart.value =
+          typeof raw.weekdayMulStart === "string" && raw.weekdayMulStart.trim()
+            ? raw.weekdayMulStart
+            : DEFAULT_WEEKDAY_MUL_START;
       }
-      if (elWeekdayMulEnd && typeof raw.weekdayMulEnd === "string") {
-        elWeekdayMulEnd.value = raw.weekdayMulEnd;
+      if (elWeekdayMulEnd) {
+        elWeekdayMulEnd.value =
+          typeof raw.weekdayMulEnd === "string" && raw.weekdayMulEnd.trim()
+            ? raw.weekdayMulEnd
+            : DEFAULT_WEEKDAY_MUL_END;
       }
-      if (elLunchStart && typeof raw.lunchStart === "string") {
-        elLunchStart.value = raw.lunchStart;
+      if (elLunchStart) {
+        elLunchStart.value =
+          typeof raw.lunchStart === "string" && raw.lunchStart.trim() ? raw.lunchStart : DEFAULT_LUNCH_START;
       }
-      if (elLunchEnd && typeof raw.lunchEnd === "string") {
-        elLunchEnd.value = raw.lunchEnd;
+      if (elLunchEnd) {
+        elLunchEnd.value =
+          typeof raw.lunchEnd === "string" && raw.lunchEnd.trim() ? raw.lunchEnd : DEFAULT_LUNCH_END;
       }
       if (typeof raw.selectedPersonIndex === "number") {
         selectedPersonIndex = Math.max(-1, Math.min(MAX_PEOPLE - 1, raw.selectedPersonIndex));
       }
-      if (elWeekdayMulStart && !elWeekdayMulStart.value) elWeekdayMulStart.value = DEFAULT_WEEKDAY_MUL_START;
-      if (elWeekdayMulEnd && !elWeekdayMulEnd.value) elWeekdayMulEnd.value = DEFAULT_WEEKDAY_MUL_END;
-      if (elLunchStart && !elLunchStart.value) elLunchStart.value = DEFAULT_LUNCH_START;
-      if (elLunchEnd && !elLunchEnd.value) elLunchEnd.value = DEFAULT_LUNCH_END;
       asideTimeSelects.forEach((sel) => normalizeAsideTimeSelect(sel));
       syncFlatpickrRangeFromInputs();
       stripAssignmentExtras();
