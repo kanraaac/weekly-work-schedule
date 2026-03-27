@@ -339,6 +339,24 @@ h1 {
   padding-left: 0.15rem;
 }
 
+/* 2주차부터: 기간 문구(왼쪽) + 이전 주 복제 버튼(바로 옆) */
+.week-title.week-title--with-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+}
+
+.week-title.week-title--with-copy .week-title-range {
+  font-weight: 700;
+}
+
+.btn-copy-prev-week {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
 .schedule-table {
   border-collapse: separate;
   border-spacing: 4px 5px;

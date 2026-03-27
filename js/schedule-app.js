@@ -358,7 +358,32 @@
       };
       if (localeKo) opts.locale = localeKo;
       fpRangeStart = flatpickr(elStart, Object.assign({}, opts, { defaultDate: elStart.value || undefined }));
-      fpRangeEnd = flatpickr(elEnd, Object.assign({}, opts, { defaultDate: elEnd.value || undefined }));
+      /* 종료일 달력은 열 때 표시되는 2달의 기준 월을 시작일에 맞춤 */
+      fpRangeEnd = flatpickr(
+        elEnd,
+        Object.assign({}, opts, {
+          defaultDate: elEnd.value || undefined,
+          onOpen: function (_selectedDates, _dateStr, instance) {
+            let anchorDate = null;
+            try {
+              const startStr = elStart && elStart.value ? String(elStart.value).trim() : "";
+              if (startStr) {
+                const parsed = parseDateOnly(startStr);
+                if (parsed && !Number.isNaN(parsed.getTime())) anchorDate = parsed;
+              }
+              if (!anchorDate) anchorDate = new Date();
+              instance.jumpToDate(anchorDate);
+            } catch (e) {
+              console.error("fpRangeEnd onOpen", e);
+              try {
+                instance.jumpToDate(new Date());
+              } catch (e2) {
+                console.error("fpRangeEnd onOpen fallback", e2);
+              }
+            }
+          },
+        })
+      );
     }
 
     const today = new Date();
@@ -678,11 +703,12 @@
       }
     }
 
-    /** 드래그로 여러 칸에 배정할 때 포인터 상태(짧은 클릭은 단일 칸 토글, Ctrl+드래그는 복사 내용 붙여넣기) */
+    /** 드래그로 여러 칸에 배정할 때 포인터 상태(Alt+드래그·클릭은 지우기, Ctrl+드래그는 붙여넣기) */
     const pointerPaint = {
       isDown: false,
       isDrag: false,
       isPasteDrag: false,
+      isEraseDrag: false,
       startKey: null,
       startX: 0,
       startY: 0,
@@ -727,6 +753,12 @@
       else assignments[key] = { personIndexes: ids };
     }
 
+    /** Alt+클릭·드래그: 해당 칸 배정 삭제 */
+    function applyEraseToSlotKey(key) {
+      if (!key || isKeyBlockedByLunch(key)) return;
+      delete assignments[key];
+    }
+
     /** 화면 좌표 아래의 배정 셀이면 해당 키에 페인트 */
     function paintHitAt(clientX, clientY) {
       const el = document.elementFromPoint(clientX, clientY);
@@ -747,6 +779,16 @@
       if (k) applyPasteToSlotKey(k);
     }
 
+    /** Alt+지우기 드래그: 좌표 아래 칸 배정 삭제 */
+    function paintHitAtErase(clientX, clientY) {
+      const el = document.elementFromPoint(clientX, clientY);
+      if (!el || !el.closest) return;
+      const host = el.closest("[data-slot-key]");
+      if (!host || host.classList.contains("is-out")) return;
+      const k = host.getAttribute("data-slot-key");
+      if (k) applyEraseToSlotKey(k);
+    }
+
     /** 문서 이동: 드래그 임계 통과 시 페인트 모드 + 경로상 셀 채움 */
     function onPointerPaintMove(ev) {
       if (!pointerPaint.isDown) return;
@@ -758,27 +800,31 @@
       if (!pointerPaint.isDrag && dx * dx + dy * dy > th * th) {
         pointerPaint.isDrag = true;
         if (pointerPaint.startKey) {
-          if (pointerPaint.isPasteDrag) applyPasteToSlotKey(pointerPaint.startKey);
+          if (pointerPaint.isEraseDrag) applyEraseToSlotKey(pointerPaint.startKey);
+          else if (pointerPaint.isPasteDrag) applyPasteToSlotKey(pointerPaint.startKey);
           else applyPaintToSlotKey(pointerPaint.startKey);
         }
       }
       if (pointerPaint.isDrag) {
-        if (pointerPaint.isPasteDrag) paintHitAtPaste(cx, cy);
+        if (pointerPaint.isEraseDrag) paintHitAtErase(cx, cy);
+        else if (pointerPaint.isPasteDrag) paintHitAtPaste(cx, cy);
         else paintHitAt(cx, cy);
       }
     }
 
-    /** 문서에서 떼기: 드래그 없었으면 시작 칸만 토글(또는 Ctrl+복사 시 붙여넣기), 이후 저장·다시 그리기 */
+    /** 문서에서 떼기: 드래그 없었으면 시작 칸만 토글·붙여넣기·지우기, 이후 저장·다시 그리기 */
     function onPointerPaintUp() {
       if (!pointerPaint.isDown) return;
       const wasDrag = pointerPaint.isDrag;
       if (!wasDrag && pointerPaint.startKey) {
-        if (pointerPaint.isPasteDrag) applyPasteToSlotKey(pointerPaint.startKey);
+        if (pointerPaint.isEraseDrag) applyEraseToSlotKey(pointerPaint.startKey);
+        else if (pointerPaint.isPasteDrag) applyPasteToSlotKey(pointerPaint.startKey);
         else applyToggleToSlotKey(pointerPaint.startKey);
       }
       pointerPaint.isDown = false;
       pointerPaint.isDrag = false;
       pointerPaint.isPasteDrag = false;
+      pointerPaint.isEraseDrag = false;
       pointerPaint.startKey = null;
       persist();
       renderCalendar();
@@ -821,6 +867,43 @@
       });
     }
 
+    /**
+     * 직전 주(월요일 prevWeekMonday)와 같은 요일·시간대 배정을 이번 주(월요일 currWeekMonday)로 복사
+     * 기간·점심 칸은 제외하고, 현재 이름 목록 기준으로만 유효 인덱스 저장
+     */
+    function applyAssignmentsCopyFromPreviousWeek(prevWeekMonday, currWeekMonday, rangeStart, rangeEnd) {
+      const namesNow = getNames();
+      const nSlots = SLOT_MINUTES_LIST.length;
+      for (let di = 0; di < DISPLAY_DAYS_MON_SAT; di++) {
+        const prevD = new Date(prevWeekMonday);
+        prevD.setDate(prevD.getDate() + di);
+        const currD = new Date(currWeekMonday);
+        currD.setDate(currD.getDate() + di);
+
+        if (currD < rangeStart || currD > rangeEnd) continue;
+
+        for (let slotIndex = 0; slotIndex < nSlots; slotIndex++) {
+          const currDStr = formatDateOnly(currD);
+          const currKey = slotStorageKey(currDStr, slotIndex);
+
+          if (isLunchCell(currD, slotIndex)) {
+            delete assignments[currKey];
+            continue;
+          }
+
+          if (prevD < rangeStart || prevD > rangeEnd || isLunchCell(prevD, slotIndex)) {
+            delete assignments[currKey];
+            continue;
+          }
+
+          const prevKey = slotStorageKey(formatDateOnly(prevD), slotIndex);
+          const ids = filterToNamedPersonIndices(namesNow, getSlotPersonIndexes(assignments[prevKey]));
+          if (ids.length === 0) delete assignments[currKey];
+          else assignments[currKey] = { personIndexes: [...ids] };
+        }
+      }
+    }
+
     /** 주별 달력 테이블 렌더 */
     function renderCalendar() {
       const startStr = elStart.value;
@@ -845,6 +928,7 @@
       const weekStart = startOfMonday(start);
       const weekEnd = startOfMonday(end);
 
+      let displayedWeekIndex = 0;
       for (let ws = new Date(weekStart); ws <= weekEnd; ws.setDate(ws.getDate() + 7)) {
         const block = document.createElement("div");
         block.className = "week-block";
@@ -853,8 +937,38 @@
         title.className = "week-title";
         const wEnd = new Date(ws);
         wEnd.setDate(wEnd.getDate() + (DISPLAY_DAYS_MON_SAT - 1));
-        title.textContent = `주 (월~토): ${formatDateOnly(ws)} ~ ${formatDateOnly(wEnd)}`;
+        const rangeLine = `주 (월~토): ${formatDateOnly(ws)} ~ ${formatDateOnly(wEnd)}`;
+
+        if (displayedWeekIndex >= 1) {
+          title.classList.add("week-title--with-copy");
+          const rangeSpan = document.createElement("span");
+          rangeSpan.className = "week-title-range";
+          rangeSpan.textContent = rangeLine;
+          const btnCopyPrev = document.createElement("button");
+          btnCopyPrev.type = "button";
+          btnCopyPrev.className = "btn-panel btn-copy-prev-week";
+          btnCopyPrev.textContent = "이전 주 복제하기";
+          const currWeekMon = new Date(ws.getFullYear(), ws.getMonth(), ws.getDate());
+          const prevWeekMon = new Date(currWeekMon.getTime());
+          prevWeekMon.setDate(prevWeekMon.getDate() - 7);
+          btnCopyPrev.addEventListener("click", () => {
+            try {
+              applyAssignmentsCopyFromPreviousWeek(prevWeekMon, currWeekMon, start, end);
+              persist();
+              renderCalendar();
+              showToast("이전 주 배정을 그대로 적용했습니다.");
+            } catch (e) {
+              console.error("applyAssignmentsCopyFromPreviousWeek", e);
+              showToast("복사 중 오류가 났습니다. 다시 시도해 주세요.");
+            }
+          });
+          title.appendChild(rangeSpan);
+          title.appendChild(btnCopyPrev);
+        } else {
+          title.textContent = rangeLine;
+        }
         block.appendChild(title);
+        displayedWeekIndex += 1;
 
         const tbl = document.createElement("table");
         tbl.className = "schedule-table";
@@ -934,14 +1048,17 @@
             ev.preventDefault();
             pointerPaint.isDown = true;
             pointerPaint.isDrag = false;
-            pointerPaint.isPasteDrag = Boolean(ev.ctrlKey && slotAssignmentClipboard !== null);
+            pointerPaint.isEraseDrag = Boolean(ev.altKey);
+            pointerPaint.isPasteDrag =
+              !pointerPaint.isEraseDrag && Boolean(ev.ctrlKey && slotAssignmentClipboard !== null);
             pointerPaint.startKey = key;
             pointerPaint.startX = ev.clientX;
             pointerPaint.startY = ev.clientY;
           });
           host.addEventListener("mouseenter", () => {
             if (!pointerPaint.isDown || !pointerPaint.isDrag) return;
-            if (pointerPaint.isPasteDrag) applyPasteToSlotKey(key);
+            if (pointerPaint.isEraseDrag) applyEraseToSlotKey(key);
+            else if (pointerPaint.isPasteDrag) applyPasteToSlotKey(key);
             else applyPaintToSlotKey(key);
           });
           host.addEventListener(
@@ -951,6 +1068,7 @@
               const t = ev.touches[0];
               pointerPaint.isDown = true;
               pointerPaint.isDrag = false;
+              pointerPaint.isEraseDrag = false;
               pointerPaint.isPasteDrag = false;
               pointerPaint.startKey = key;
               pointerPaint.startX = t.clientX;
