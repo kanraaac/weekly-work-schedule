@@ -6,6 +6,9 @@
 (function () {
   "use strict";
 
+  /** UI·배포 확인용(수정 배포 시 0.01씩 증가) */
+  const APP_VERSION = "1.01";
+
   const SLOT_MINUTES = 30;
   const MULTIPLIER_WEIGHT = 1.5;
   /** 근무시간 select 선택 가능 범위 (08:00~22:00, 30분 단위) — 초기값은 아래 DEFAULT_* */
@@ -350,6 +353,9 @@
 
   /** DOM이 로드된 뒤 앱 초기화 */
   function initApp() {
+    const elAppVersion = document.getElementById("appVersion");
+    if (elAppVersion) elAppVersion.textContent = `v${APP_VERSION}`;
+
     const elStart = document.getElementById("rangeStart");
     const elEnd = document.getElementById("rangeEnd");
     const elPeople = document.querySelectorAll(".person-name");
