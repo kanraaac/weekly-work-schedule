@@ -11,7 +11,7 @@
   /** 근무시간 select 선택 가능 범위 (08:00~22:00, 30분 단위) — 초기값은 아래 DEFAULT_* */
   const WORK_HOUR_SELECT_MIN = 8 * 60;
   const WORK_HOUR_SELECT_MAX = 22 * 60;
-  const DEFAULT_WORK_START = "09:00";
+  const DEFAULT_WORK_START = "08:30";
   const DEFAULT_WORK_END = "21:00";
   const MAX_PEOPLE = 10;
   /** 달력에 표시할 요일 수 (월~토, 일요일 제외) */
@@ -19,7 +19,7 @@
   const STORAGE_KEY = "clinicSchedule_v1";
   const EXPORT_FILE_VERSION = 1;
   /** 시간 설정 기본값(30분 격자) — 평일 1.5배·점심 초기 셀렉트 */
-  const DEFAULT_WEEKDAY_MUL_START = "18:30";
+  const DEFAULT_WEEKDAY_MUL_START = "18:00";
   const DEFAULT_WEEKDAY_MUL_END = "21:00";
   const DEFAULT_LUNCH_START = "12:30";
   const DEFAULT_LUNCH_END = "14:00";
@@ -44,7 +44,7 @@
   /**
    * 근무/표시용 슬롯 시작 시각(분) 목록
    * 종료 시각 endMin은 마감(해당 시각까지 근무)으로 보고, 각 행은 30분 칸의 시작이므로
-   * 마지막 시작은 endMin 직전(예: 09:00~21:00 → 20:30~21:00 칸까지, 21:00 시작 행 없음)
+   * 마지막 시작은 endMin 직전(예: 08:30~21:00 → 20:30~21:00 칸까지, 21:00 시작 행 없음)
    */
   function buildSlotMinutesList(startMin, endMin) {
     const list = [];
@@ -395,7 +395,7 @@
       if (a == null || b == null) {
         const ds = parseHHMMToMinutes(DEFAULT_WORK_START);
         const de = parseHHMMToMinutes(DEFAULT_WORK_END);
-        if (ds == null || de == null) return buildSlotMinutesList(9 * 60, 21 * 60);
+        if (ds == null || de == null) return buildSlotMinutesList(8 * 60 + 30, 21 * 60);
         return buildSlotMinutesList(ds, de);
       }
       let s0 = snapMinutesToHalfHourGrid(Math.min(a, b));
