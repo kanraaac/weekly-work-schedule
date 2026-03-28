@@ -7,7 +7,7 @@
   "use strict";
 
   /** UI·배포 확인용(수정 배포 시 0.01씩 증가) */
-  const APP_VERSION = "1.01";
+  const APP_VERSION = "1.02";
 
   const SLOT_MINUTES = 30;
   const MULTIPLIER_WEIGHT = 1.5;
@@ -385,6 +385,8 @@
     let selectedPersonIndex = 0;
     /** 우클릭 메뉴에서 복사한 personIndex 목록(null이면 복사 이력 없음) */
     let slotAssignmentClipboard = null;
+    /** 상단 '복사하기'·'붙여넣기' 버튼으로 다음 클릭 칸에 적용(null | 'copy' | 'paste') */
+    let slotPickMode = null;
 
     /** 평일 1.5배 구간(분) — 토요일은 항상 1.5배 */
     function getWeekdayMulMinutesBounds() {
@@ -823,6 +825,10 @@
       if (ev.key === "Escape") {
         if (elSlotCtxMenu.classList.contains("is-open")) hideSlotContextMenu();
         if (elPersonNameCtxMenu.classList.contains("is-open")) hidePersonNameContextMenu();
+        if (slotPickMode) {
+          clearSlotPickMode();
+          showToast("취소했습니다.");
+        }
       }
     });
 
@@ -1056,6 +1062,44 @@
     function applyEraseToSlotKey(key) {
       if (!key || isKeyBlockedByLunch(key)) return;
       delete assignments[key];
+    }
+
+    /** 상단 버튼으로 칸 복사 시 clipboard에 넣기 */
+    function applySlotCopyFromKey(key) {
+      const namesNow = getNames();
+      const ids = filterToNamedPersonIndices(namesNow, getSlotPersonIndexes(assignments[key]));
+      slotAssignmentClipboard = [...ids];
+      showToast(ids.length ? "이 칸 배정을 복사했습니다." : "빈 칸을 복사했습니다. 붙여넣기 시 배정이 비워집니다.");
+    }
+
+    /** 상단 버튼으로 칸 붙여넣기(점심 칸은 불가) */
+    function applySlotPasteFromKey(key) {
+      if (!key) return;
+      if (isKeyBlockedByLunch(key)) {
+        showToast("점심 시간 칸에는 붙여넣을 수 없습니다.");
+        return;
+      }
+      if (slotAssignmentClipboard === null) {
+        showToast("복사한 내용이 없습니다. 먼저 복사하기를 선택하세요.");
+        return;
+      }
+      applyPasteToSlotKey(key);
+      showToast("붙여넣었습니다.");
+    }
+
+    function clearSlotPickMode() {
+      slotPickMode = null;
+      const btnC = document.getElementById("btnSlotCopyMode");
+      const btnP = document.getElementById("btnSlotPasteMode");
+      if (btnC) btnC.classList.remove("is-active");
+      if (btnP) btnP.classList.remove("is-active");
+    }
+
+    function updateSlotPickModeButtons() {
+      const btnC = document.getElementById("btnSlotCopyMode");
+      const btnP = document.getElementById("btnSlotPasteMode");
+      if (btnC) btnC.classList.toggle("is-active", slotPickMode === "copy");
+      if (btnP) btnP.classList.toggle("is-active", slotPickMode === "paste");
     }
 
     /** 화면 좌표 아래의 배정 셀이면 해당 키에 페인트 */
@@ -1350,6 +1394,16 @@
           );
           host.addEventListener("mousedown", (ev) => {
             if (ev.button !== 0) return;
+            if (slotPickMode === "copy" || slotPickMode === "paste") {
+              ev.preventDefault();
+              ev.stopPropagation();
+              if (slotPickMode === "copy") applySlotCopyFromKey(key);
+              else applySlotPasteFromKey(key);
+              clearSlotPickMode();
+              persist();
+              renderCalendar();
+              return;
+            }
             ev.preventDefault();
             pointerPaint.isDown = true;
             pointerPaint.isDrag = false;
@@ -1369,6 +1423,16 @@
           host.addEventListener(
             "touchstart",
             (ev) => {
+              if (slotPickMode === "copy" || slotPickMode === "paste") {
+                if (!ev.touches || ev.touches.length !== 1) return;
+                ev.preventDefault();
+                if (slotPickMode === "copy") applySlotCopyFromKey(key);
+                else applySlotPasteFromKey(key);
+                clearSlotPickMode();
+                persist();
+                renderCalendar();
+                return;
+              }
               if (!ev.touches || ev.touches.length !== 1) return;
               const t = ev.touches[0];
               pointerPaint.isDown = true;
@@ -1379,7 +1443,7 @@
               pointerPaint.startX = t.clientX;
               pointerPaint.startY = t.clientY;
             },
-            { passive: true }
+            { passive: false }
           );
         }
 
@@ -1557,6 +1621,42 @@
         renderPersonPicker();
         renderCalendar();
       });
+    });
+
+    /** 시간표 칸 복사·붙여넣기: 버튼으로 모드 선택 후 칸 클릭 */
+    document.getElementById("btnSlotCopyMode")?.addEventListener("click", () => {
+      try {
+        if (slotPickMode === "copy") {
+          clearSlotPickMode();
+          showToast("복사 모드를 취소했습니다.");
+          return;
+        }
+        slotPickMode = "copy";
+        updateSlotPickModeButtons();
+        showToast("복사할 칸을 클릭하세요.");
+      } catch (e) {
+        console.error("btnSlotCopyMode", e);
+        showToast("동작을 시작할 수 없습니다.");
+      }
+    });
+    document.getElementById("btnSlotPasteMode")?.addEventListener("click", () => {
+      try {
+        if (slotPickMode === "paste") {
+          clearSlotPickMode();
+          showToast("붙여넣기 모드를 취소했습니다.");
+          return;
+        }
+        if (slotAssignmentClipboard === null) {
+          showToast("복사한 배정이 없습니다. 먼저 복사하기로 칸을 복사하세요.");
+          return;
+        }
+        slotPickMode = "paste";
+        updateSlotPickModeButtons();
+        showToast("붙여넣을 칸을 클릭하세요.");
+      } catch (e) {
+        console.error("btnSlotPasteMode", e);
+        showToast("동작을 시작할 수 없습니다.");
+      }
     });
 
     document.getElementById("btnExportSchedule")?.addEventListener("click", () => {
