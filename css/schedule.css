@@ -515,13 +515,13 @@ body {
   align-items: center;
 }
 
-/** 셀 오른쪽 고정: 배정된 총 인원 수 */
+/** 셀 오른쪽 고정: 배정된 총 인원 수(표시 숫자 약 2배 크기) */
 .slot-assign-count {
   flex: 0 0 auto;
   align-self: center;
-  min-width: 22px;
-  padding: 2px 5px;
-  font-size: 0.56rem;
+  min-width: 44px;
+  padding: 4px 10px;
+  font-size: 1.12rem;
   font-weight: 800;
   line-height: 1.2;
   text-align: center;
