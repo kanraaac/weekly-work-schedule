@@ -253,12 +253,16 @@ h1 {
 
 .people-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
-  gap: 0.08rem 0.15rem;
+  grid-template-columns: repeat(auto-fill, minmax(7.65rem, 1fr));
+  gap: 0 0.06rem;
+}
+
+.people-grid .field {
+  gap: 0.06rem;
 }
 
 .people-grid input {
-  padding: 0.4rem 0.55rem;
+  padding: 0.32rem 0.4rem;
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 0.85rem;
