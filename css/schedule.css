@@ -253,8 +253,8 @@ h1 {
 
 .people-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(8.75rem, 1fr));
-  gap: 0.2rem 0.35rem;
+  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  gap: 0.08rem 0.15rem;
 }
 
 .people-grid input {
