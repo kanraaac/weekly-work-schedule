@@ -297,8 +297,9 @@ body {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem 0.75rem;
+  justify-content: flex-start;
+  column-gap: 0.45rem;
+  row-gap: 0.35rem;
   margin-bottom: 0.5rem;
 }
 
