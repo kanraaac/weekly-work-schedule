@@ -7,7 +7,7 @@
   "use strict";
 
   /** UI·배포 확인용(수정 배포 시 0.01씩 증가) */
-  const APP_VERSION = "1.05";
+  const APP_VERSION = "1.06";
 
   const SLOT_MINUTES = 30;
   const MULTIPLIER_WEIGHT = 1.5;
