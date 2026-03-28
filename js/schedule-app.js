@@ -735,13 +735,21 @@
       }
     });
 
-    elPeople.forEach((inp) => {
-      inp.addEventListener("contextmenu", (ev) => {
+    /**
+     * 이름 입력 우클릭: document 캡처 + passive:false 로 기본 메뉴 차단
+     * (일부 https 환경에서 input 버블만으로는 preventDefault가 먹지 않는 경우 대비)
+     */
+    document.addEventListener(
+      "contextmenu",
+      (ev) => {
+        const nameInp = ev.target && ev.target.closest && ev.target.closest(".person-name");
+        if (!nameInp) return;
         ev.preventDefault();
         ev.stopPropagation();
-        openPersonNameContextMenu(ev.clientX, ev.clientY, inp);
-      });
-    });
+        openPersonNameContextMenu(ev.clientX, ev.clientY, nameInp);
+      },
+      { capture: true, passive: false }
+    );
 
     elSlotCtxMenu.addEventListener("click", (ev) => {
       ev.stopPropagation();
@@ -1325,11 +1333,15 @@
           host.appendChild(inner);
           host.setAttribute("data-slot-key", key);
 
-          host.addEventListener("contextmenu", (ev) => {
-            ev.preventDefault();
-            ev.stopPropagation();
-            openSlotContextMenu(ev.clientX, ev.clientY, key);
-          });
+          host.addEventListener(
+            "contextmenu",
+            (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              openSlotContextMenu(ev.clientX, ev.clientY, key);
+            },
+            { passive: false }
+          );
           host.addEventListener("mousedown", (ev) => {
             if (ev.button !== 0) return;
             ev.preventDefault();
