@@ -7,7 +7,7 @@
   "use strict";
 
   /** UI·배포 확인용(수정 배포 시 0.01씩 증가) */
-  const APP_VERSION = "1.09";
+  const APP_VERSION = "1.11";
 
   const SLOT_MINUTES = 30;
   const MULTIPLIER_WEIGHT = 1.5;
@@ -302,6 +302,22 @@
   /** 이름이 입력된 사람만(공백 제외) */
   function filterToNamedPersonIndices(names, ids) {
     return ids.filter((i) => typeof i === "number" && i >= 0 && i < MAX_PEOPLE && (names[i] || "").trim() !== "");
+  }
+
+  /**
+   * 이름이 입력된 슬롯 인덱스 전체(0~9, 공백 제외)
+   * @param {string[]} names getNames() 결과
+   */
+  function getAllNamedPersonIndices(names) {
+    const list = [];
+    try {
+      for (let i = 0; i < MAX_PEOPLE; i++) {
+        if ((names[i] || "").trim() !== "") list.push(i);
+      }
+    } catch (e) {
+      console.error("getAllNamedPersonIndices", e);
+    }
+    return list;
   }
 
   /** 슬롯 배정에서 유효한 personIndex 목록(정렬·중복 제거) */
@@ -1041,7 +1057,7 @@
       DRAG_THRESHOLD_PX: 6,
     };
 
-    /** 칸 클릭: 선택 인원 토글(추가/제거) */
+    /** 칸 클릭: 배정 보기는 배정 토글. 오프 보기는 빈 칸에서 첫 클릭만 «선택 인원=오프, 나머지 배정» */
     function applyToggleToSlotKey(key) {
       if (isKeyBlockedByLunch(key)) return;
       if (selectedPersonIndex < 0) {
@@ -1051,22 +1067,46 @@
       const namesNow = getNames();
       let ids = filterToNamedPersonIndices(namesNow, getSlotPersonIndexes(assignments[key]));
       const idx = selectedPersonIndex;
-      if (ids.includes(idx)) ids = ids.filter((x) => x !== idx);
-      else ids = [...ids, idx].sort((a, b) => a - b);
-      if (ids.length === 0) delete assignments[key];
-      else assignments[key] = { personIndexes: ids };
+      try {
+        if (isCalendarOffViewMode && ids.length === 0) {
+          ids = getAllNamedPersonIndices(namesNow)
+            .filter((i) => i !== idx)
+            .sort((a, b) => a - b);
+          if (ids.length === 0) delete assignments[key];
+          else assignments[key] = { personIndexes: ids };
+          return;
+        }
+        if (ids.includes(idx)) ids = ids.filter((x) => x !== idx);
+        else ids = [...ids, idx].sort((a, b) => a - b);
+        if (ids.length === 0) delete assignments[key];
+        else assignments[key] = { personIndexes: ids };
+      } catch (e) {
+        console.error("applyToggleToSlotKey", e);
+      }
     }
 
-    /** 드래그 중: 선택 인원을 칸에 추가(이미 있으면 유지) */
+    /** 드래그 중: 배정 보기는 인원 추가. 오프 보기는 빈 칸만 «선택 인원 제외 전원 배정» */
     function applyPaintToSlotKey(key) {
       if (isKeyBlockedByLunch(key)) return;
       if (selectedPersonIndex < 0 || !key) return;
       const namesNow = getNames();
       let ids = filterToNamedPersonIndices(namesNow, getSlotPersonIndexes(assignments[key]));
       const idx = selectedPersonIndex;
-      if (ids.includes(idx)) return;
-      ids = [...ids, idx].sort((a, b) => a - b);
-      assignments[key] = { personIndexes: ids };
+      try {
+        if (isCalendarOffViewMode && ids.length === 0) {
+          ids = getAllNamedPersonIndices(namesNow)
+            .filter((i) => i !== idx)
+            .sort((a, b) => a - b);
+          if (ids.length === 0) delete assignments[key];
+          else assignments[key] = { personIndexes: ids };
+          return;
+        }
+        if (ids.includes(idx)) return;
+        ids = [...ids, idx].sort((a, b) => a - b);
+        assignments[key] = { personIndexes: ids };
+      } catch (e) {
+        console.error("applyPaintToSlotKey", e);
+      }
     }
 
     /** Ctrl+드래그 붙여넣기: 복사해 둔 배정으로 칸 전체를 덮어씀 */
@@ -1368,8 +1408,11 @@
           const key = slotStorageKey(dStr, slotStartMin);
           const names = getNames();
           const indexes = filterToNamedPersonIndices(names, getSlotPersonIndexes(assignments[key]));
+          /* 오프 보기: 배정이 없는 칸은 배정 보기와 같이 빈 칸 유지(전원 오프로 채우지 않음) */
           const displayIndexes = isCalendarOffViewMode
-            ? getOffPersonIndexesForSlot(names, indexes)
+            ? indexes.length === 0
+              ? []
+              : getOffPersonIndexesForSlot(names, indexes)
             : indexes;
 
           const inner = document.createElement("div");
@@ -1694,17 +1737,24 @@
     const BTN_CALENDAR_LABEL_TO_ASSIGN = "눌러서 배정으로 보기";
     const CALENDAR_VIEW_STATUS_ASSIGN = "(배정으로 표시)";
     const CALENDAR_VIEW_STATUS_OFF = "(오프로 표시)";
+    const PICK_SECTION_TITLE_ASSIGN = "배정할 사람 선택";
+    const PICK_SECTION_TITLE_OFF = "오프인 사람 선택";
 
-    /** 오프/배정 보기: 버튼·상태 문구·aria-pressed 동기화 */
+    /** 오프/배정 보기: 버튼·상태 문구·선택 영역 제목·aria-pressed 동기화 */
     function syncCalendarOffViewButton() {
       const btn = document.getElementById("btnCalendarOffView");
       const labelEl = document.getElementById("calendarViewModeLabel");
-      if (!btn) return;
+      const pickTitle = document.getElementById("lbl-pick");
       try {
-        btn.textContent = isCalendarOffViewMode ? BTN_CALENDAR_LABEL_TO_ASSIGN : BTN_CALENDAR_LABEL_TO_OFF;
-        btn.setAttribute("aria-pressed", isCalendarOffViewMode ? "true" : "false");
+        if (btn) {
+          btn.textContent = isCalendarOffViewMode ? BTN_CALENDAR_LABEL_TO_ASSIGN : BTN_CALENDAR_LABEL_TO_OFF;
+          btn.setAttribute("aria-pressed", isCalendarOffViewMode ? "true" : "false");
+        }
         if (labelEl) {
           labelEl.textContent = isCalendarOffViewMode ? CALENDAR_VIEW_STATUS_OFF : CALENDAR_VIEW_STATUS_ASSIGN;
+        }
+        if (pickTitle) {
+          pickTitle.textContent = isCalendarOffViewMode ? PICK_SECTION_TITLE_OFF : PICK_SECTION_TITLE_ASSIGN;
         }
       } catch (e) {
         console.error("syncCalendarOffViewButton", e);
