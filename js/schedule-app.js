@@ -18,6 +18,7 @@
   /** 근무시간 select 선택 가능 범위 (08:00~22:00, 30분 단위) — 초기값은 아래 DEFAULT_* */
   const WORK_HOUR_SELECT_MIN = 8 * 60;
   const WORK_HOUR_SELECT_MAX = 22 * 60;
+  /** 기본 근무: 09:00~20:30(표시 격자는 종료 시각까지 30분 칸) */
   const DEFAULT_WORK_START = "09:00";
   const DEFAULT_WORK_END = "20:30";
   const MAX_PEOPLE = 10;
@@ -450,7 +451,7 @@
       if (a == null || b == null) {
         const ds = parseHHMMToMinutes(DEFAULT_WORK_START);
         const de = parseHHMMToMinutes(DEFAULT_WORK_END);
-        if (ds == null || de == null) return buildSlotMinutesList(9 * 60, 21 * 60);
+        if (ds == null || de == null) return buildSlotMinutesList(9 * 60, 20 * 60 + 30);
         return buildSlotMinutesList(ds, de);
       }
       let s0 = snapMinutesToHalfHourGrid(Math.min(a, b));
@@ -2372,33 +2373,104 @@
 
     document.getElementById("btnResetSchedule")?.addEventListener("click", () => {
       if (
-        !confirm(
-          "모든 배정을 지웁니다.\n(이름·기간·평일 1.5배 시간 설정은 유지됩니다.)\n계속할까요?"
+        !window.confirm(
+          "[전체 초기화]\n\n배정·점심 칸 예외·칸 특성(진료/1.5배/제외)·복사 표시를 모두 지우고, 근무·점심·평일 1.5배(오버타임) 시간을 기본값으로 되돌립니다.\n달력은 오프 보기로 맞춥니다. 이름과 기간(시작일·종료일)은 유지됩니다.\n\n실행할까요?"
         )
       ) {
         return;
       }
-      assignments = {};
-      persist();
-      renderPersonPicker();
-      renderCalendar();
-      showToast("배정 데이터를 초기화했습니다.");
+      try {
+        hideSlotContextMenu();
+        hidePersonNameContextMenu();
+        assignments = {};
+        lunchExceptionKeys = new Set();
+        slotCellOverrides = {};
+        slotAssignmentClipboard = null;
+        slotCopyHighlightKey = null;
+        slotModePanelOpenKey = null;
+        isCalendarOffViewMode = true;
+        syncCalendarOffViewButton();
+        if (elWorkStart) elWorkStart.value = DEFAULT_WORK_START;
+        if (elWorkEnd) elWorkEnd.value = DEFAULT_WORK_END;
+        normalizeWorkHourSelect(elWorkStart);
+        normalizeWorkHourSelect(elWorkEnd);
+        if (elWeekdayMulStart) elWeekdayMulStart.value = DEFAULT_WEEKDAY_MUL_START;
+        if (elWeekdayMulEnd) elWeekdayMulEnd.value = DEFAULT_WEEKDAY_MUL_END;
+        if (elLunchStart) elLunchStart.value = DEFAULT_LUNCH_START;
+        if (elLunchEnd) elLunchEnd.value = DEFAULT_LUNCH_END;
+        asideTimeSelects.forEach((sel) => normalizeAsideTimeSelect(sel));
+        persist();
+        renderPersonPicker();
+        renderCalendar();
+        showToast("전체 초기화를 적용했습니다.");
+      } catch (e) {
+        console.error("btnResetSchedule", e);
+        showToast("초기화 중 오류가 났습니다. 다시 시도해 주세요.");
+      }
+    });
+
+    /** 배정(사람)만 비움: 시간·칸 특성·점심 예외·이름·기간 유지 */
+    document.getElementById("btnResetContentOnly")?.addEventListener("click", () => {
+      if (
+        !window.confirm(
+          "[내용만 초기화]\n\n근무시간·점심·평일 1.5배 설정, 칸 특성(진료/1.5배/제외), 점심 예외 칸은 그대로 두고 사람 배정만 모두 지웁니다.\n복사해 둔 칸 표시도 함께 해제합니다.\n\n실행할까요?"
+        )
+      ) {
+        return;
+      }
+      try {
+        hideSlotContextMenu();
+        hidePersonNameContextMenu();
+        assignments = {};
+        slotAssignmentClipboard = null;
+        slotCopyHighlightKey = null;
+        slotModePanelOpenKey = null;
+        persist();
+        renderCalendar();
+        showToast("배정 내용만 지웠습니다.");
+      } catch (e) {
+        console.error("btnResetContentOnly", e);
+        showToast("초기화 중 오류가 났습니다. 다시 시도해 주세요.");
+      }
     });
 
     document.getElementById("btnClearWeek")?.addEventListener("click", () => {
-      if (!confirm("현재 기간 안의 모든 배정을 지울까요?")) return;
+      if (
+        !window.confirm(
+          "[기간 내 내용만 삭제]\n\n시작일~종료일 안에 있는 사람 배정만 지웁니다.\n근무·점심·평일 1.5배, 칸 특성(진료/1.5배/제외), 점심 예외는 그대로 둡니다.\n\n실행할까요?"
+        )
+      ) {
+        return;
+      }
       const startStr = elStart.value;
       const endStr = elEnd.value;
       const start = parseDateOnly(startStr);
       const end = parseDateOnly(endStr);
-      Object.keys(assignments).forEach((key) => {
-        const [dStr] = key.split("|");
-        const d = parseDateOnly(dStr);
-        if (d >= start && d <= end) delete assignments[key];
-      });
-      persist();
-      renderCalendar();
-      showToast("기간 내 배정이 초기화되었습니다.");
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
+        showToast("시작일·종료일을 확인해 주세요.");
+        return;
+      }
+      try {
+        hideSlotContextMenu();
+        hidePersonNameContextMenu();
+        const inRange = (key) => {
+          const dStr = key.split("|")[0];
+          const d = parseDateOnly(dStr);
+          if (Number.isNaN(d.getTime())) return false;
+          return d >= start && d <= end;
+        };
+        Object.keys(assignments).forEach((key) => {
+          if (inRange(key)) delete assignments[key];
+        });
+        if (slotCopyHighlightKey && inRange(slotCopyHighlightKey)) slotCopyHighlightKey = null;
+        if (slotModePanelOpenKey && inRange(slotModePanelOpenKey)) slotModePanelOpenKey = null;
+        persist();
+        renderCalendar();
+        showToast("기간 내 배정만 지웠습니다.");
+      } catch (e) {
+        console.error("btnClearWeek", e);
+        showToast("처리 중 오류가 났습니다. 다시 시도해 주세요.");
+      }
     });
 
     wireFlatpickrRangeInputs();

@@ -30,15 +30,16 @@
             </div>
             <div class="field">
               <label>&nbsp;</label>
-              <button type="button" id="btnClearWeek" class="btn-panel">기간 내 배정만 삭제</button>
+              <button type="button" id="btnClearWeek" class="btn-panel">기간 내 내용만 삭제</button>
             </div>
           </div>
-          <p class="file-io-hint">배정·평일 1.5배·점심 시간·점심 칸 개별 예외·이름·기간·선택 인덱스가 JSON 파일로 저장됩니다. 창을 닫을 때 브라우저 저장(localStorage)은 항상 맞추고, JSON 자동 다운로드를 시도합니다(환경에 따라 차단될 수 있어 막히면 「파일로 저장」을 눌러 주세요).</p>
+          <p class="file-io-hint">배정·평일 1.5배·점심 시간·점심 칸 개별 예외·이름·기간·선택 인덱스가 JSON 파일로 저장됩니다. 「기간 내 내용만 삭제」는 시작~종료일 사이 칸의 배정만 지우고 칸 특성은 유지합니다. 「전체 초기화」는 설정·칸 특성까지 기본값으로 되돌리고, 「내용만 초기화」는 기간과 무관하게 모든 배정만 지웁니다. 초기화류 버튼은 실행 전 확인 창이 뜹니다. 창을 닫을 때 브라우저 저장(localStorage)은 항상 맞추고, JSON 자동 다운로드를 시도합니다(환경에 따라 차단될 수 있어 막히면 「파일로 저장」을 눌러 주세요).</p>
           <div class="controls file-io-row">
             <button type="button" id="btnExportSchedule" class="btn-panel btn-primary">파일로 저장</button>
             <button type="button" id="btnImportSchedule" class="btn-panel">파일 불러오기</button>
             <input type="file" id="fileImportSchedule" accept=".json,application/json" hidden />
-            <button type="button" id="btnResetSchedule" class="btn-panel btn-danger">데이터 초기화</button>
+            <button type="button" id="btnResetSchedule" class="btn-panel btn-danger">전체 초기화</button>
+            <button type="button" id="btnResetContentOnly" class="btn-panel">내용만 초기화</button>
           </div>
         </div>
         <aside class="weekday-mul-aside" aria-labelledby="lbl-weekday-mul">
