@@ -7,7 +7,7 @@
   "use strict";
 
   /** UI·배포 확인용(수정 배포 시 0.01씩 증가) */
-  const APP_VERSION = "1.14";
+  const APP_VERSION = "1.16";
 
   const SLOT_MINUTES = 30;
   const MULTIPLIER_WEIGHT = 1.5;
@@ -417,13 +417,15 @@
     const elPicker = document.getElementById("personPicker");
 
     let assignments = {};
+    /** 월~금 점심 구간과 겹치더라도 일반 진료 칸으로 둘 `YYYY-MM-DD|slotStartMin` 키 집합 */
+    let lunchExceptionKeys = new Set();
     let selectedPersonIndex = 0;
     /** 우클릭 메뉴에서 복사한 personIndex 목록(null이면 복사 이력 없음) */
     let slotAssignmentClipboard = null;
     /** 상단 '복사하기'·'붙여넣기' 버튼으로 다음 클릭 칸에 적용(null | 'copy' | 'paste') */
     let slotPickMode = null;
-    /** true면 셀 칩에 미배정(오프) 인원 표시 — 오른쪽 숫자는 항상 배정 인원 수 */
-    let isCalendarOffViewMode = false;
+    /** true면 셀 칩에 미배정(오프) 인원 표시 — 오른쪽 숫자는 항상 배정 인원 수 (기본: 오프 보기) */
+    let isCalendarOffViewMode = true;
 
     /** 평일 1.5배 구간(분) — 토요일은 항상 1.5배 */
     function getWeekdayMulMinutesBounds() {
@@ -467,9 +469,36 @@
       return { startMin: a, endMin: b };
     }
 
+    /**
+     * 점심(배정 불가) 칸 여부: 글로벌 점심 구간과 겹치고, 해당 칸이 개별 예외가 아닐 때만 true
+     */
     function isLunchCell(d, slotStartMin) {
       const { startMin, endMin } = getLunchMinutesBounds();
-      return isLunchSlotOverlap(d, slotStartMin, startMin, endMin);
+      if (!isLunchSlotOverlap(d, slotStartMin, startMin, endMin)) return false;
+      const key = slotStorageKey(formatDateOnly(d), slotStartMin);
+      if (lunchExceptionKeys.has(key)) return false;
+      return true;
+    }
+
+    /**
+     * 점심 구간 밖·주말 등으로 더 이상 점심이 아닌 예외 키는 저장 전에 제거
+     */
+    function pruneStaleLunchExceptions() {
+      const { startMin, endMin } = getLunchMinutesBounds();
+      const next = new Set();
+      try {
+        lunchExceptionKeys.forEach((key) => {
+          const dStr = key.split("|")[0];
+          const slotStartMin = slotStartMinFromKey(key);
+          if (slotStartMin == null) return;
+          const d = parseDateOnly(dStr);
+          if (Number.isNaN(d.getTime())) return;
+          if (isLunchSlotOverlap(d, slotStartMin, startMin, endMin)) next.add(key);
+        });
+      } catch (e) {
+        console.error("pruneStaleLunchExceptions", e);
+      }
+      lunchExceptionKeys = next;
     }
 
     /** 저장 전 월~금 점심 구간과 겹치는 배정 제거 */
@@ -586,6 +615,12 @@
           if (ids.length) tmp[k] = { personIndexes: ids };
         });
         assignments = migrateAssignmentsToMinuteKeys(tmp);
+      }
+      lunchExceptionKeys = new Set();
+      if (Array.isArray(restored.lunchExceptions)) {
+        restored.lunchExceptions.forEach((k) => {
+          if (typeof k === "string" && k.indexOf("|") > 0) lunchExceptionKeys.add(k);
+        });
       }
       if (typeof restored.weekdayMulStart === "string" && restored.weekdayMulStart.trim() && elWeekdayMulStart) {
         elWeekdayMulStart.value = restored.weekdayMulStart;
@@ -897,6 +932,7 @@
     /** persist */
     function persist() {
       pruneLunchAssignments();
+      pruneStaleLunchExceptions();
       stripAssignmentExtras();
       saveState({
         rangeStart: elStart.value,
@@ -909,6 +945,7 @@
         lunchEnd: elLunchEnd ? elLunchEnd.value : "",
         workStart: elWorkStart ? elWorkStart.value : "",
         workEnd: elWorkEnd ? elWorkEnd.value : "",
+        lunchExceptions: [...lunchExceptionKeys],
         selectedPersonIndex,
       });
     }
@@ -916,6 +953,7 @@
     /** 내보낼 JSON 스냅샷 객체 생성 */
     function buildExportPayload() {
       pruneLunchAssignments();
+      pruneStaleLunchExceptions();
       stripAssignmentExtras();
       return {
         version: EXPORT_FILE_VERSION,
@@ -930,6 +968,7 @@
         lunchEnd: elLunchEnd ? elLunchEnd.value : "",
         workStart: elWorkStart ? elWorkStart.value : "",
         workEnd: elWorkEnd ? elWorkEnd.value : "",
+        lunchExceptions: [...lunchExceptionKeys],
         selectedPersonIndex,
       };
     }
@@ -954,6 +993,12 @@
           if (ids.length) tmp[k] = { personIndexes: ids };
         });
         assignments = migrateAssignmentsToMinuteKeys(tmp);
+      }
+      lunchExceptionKeys = new Set();
+      if (Array.isArray(raw.lunchExceptions)) {
+        raw.lunchExceptions.forEach((k) => {
+          if (typeof k === "string" && k.indexOf("|") > 0) lunchExceptionKeys.add(k);
+        });
       }
       if (elWorkStart) {
         elWorkStart.value =
@@ -1355,6 +1400,40 @@
       const weekStart = startOfMonday(start);
       const weekEnd = startOfMonday(end);
 
+      /**
+       * 특정 시간 행(slotStartMin)의 점심 예외를 전부 제거해 점심시간으로 복구
+       * - 월~금에서 점심 구간과 실제로 겹치는 날짜 칸만 대상으로 함
+       * - 예외가 제거되면 해당 칸은 점심(배정 불가)로 처리되며, 기존 배정은 함께 삭제
+       */
+      function restoreLunchRowAcrossRange(slotStartMin) {
+        const { startMin, endMin } = getLunchMinutesBounds();
+        let removedCount = 0;
+        try {
+          const cur = new Date(start);
+          while (cur <= end) {
+            const dow = cur.getDay();
+            if (dow >= 1 && dow <= 5) {
+              if (isLunchSlotOverlap(cur, slotStartMin, startMin, endMin)) {
+                const key = slotStorageKey(formatDateOnly(cur), slotStartMin);
+                if (lunchExceptionKeys.has(key)) {
+                  lunchExceptionKeys.delete(key);
+                  removedCount += 1;
+                }
+                if (assignments[key]) delete assignments[key];
+              }
+            }
+            cur.setDate(cur.getDate() + 1);
+          }
+        } catch (e) {
+          console.error("restoreLunchRowAcrossRange", e);
+          showToast("복구 중 오류가 났습니다. 다시 시도해 주세요.");
+          return;
+        }
+        persist();
+        renderCalendar();
+        showToast(removedCount ? "해당 시간 줄을 점심시간으로 복구했습니다." : "복구할 점심 예외가 없습니다.");
+      }
+
       let displayedWeekIndex = 0;
       for (let ws = new Date(weekStart); ws <= weekEnd; ws.setDate(ws.getDate() + 7)) {
         const block = document.createElement("div");
@@ -1629,6 +1708,30 @@
             if (lunchHere) td.classList.add("is-lunch");
 
             if (!isOut && lunchHere) {
+              const openKey = slotStorageKey(dStr, slotStartMin);
+              const btnOpen = document.createElement("button");
+              btnOpen.type = "button";
+              btnOpen.className = "lunch-open-slot-btn";
+              btnOpen.textContent = "×";
+              btnOpen.setAttribute("aria-label", "이 칸만 점심 제외(일반 진료 시간)");
+              btnOpen.title = "이 칸만 일반 진료 시간(배정·집계 포함)";
+              btnOpen.addEventListener("click", (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                try {
+                  lunchExceptionKeys.add(openKey);
+                  persist();
+                  renderCalendar();
+                  showToast("이 칸을 일반 진료 시간으로 표시했습니다.");
+                } catch (e) {
+                  console.error("lunchOpenSlot", e);
+                  showToast("적용 중 오류가 났습니다. 다시 시도해 주세요.");
+                }
+              });
+              btnOpen.addEventListener("mousedown", (ev) => {
+                ev.stopPropagation();
+              });
+              td.appendChild(btnOpen);
               prevSignatureByDayIndex[di] = "";
               trEl.appendChild(td);
               continue;
@@ -1665,6 +1768,18 @@
           const tTime = document.createElement("th");
           tTime.className = "time-col";
           tTime.textContent = minutesToLabel(slotStartMin);
+          try {
+            const { startMin, endMin } = getLunchMinutesBounds();
+            /* 이 시간 행이 점심 구간과 겹치면(월~금 기준) 클릭으로 점심 복구 기능을 제공 */
+            const anchorWeekday = new Date(weekStart);
+            if (isLunchSlotOverlap(anchorWeekday, slotStartMin, startMin, endMin)) {
+              tTime.classList.add("time-col--lunch");
+              tTime.title = "클릭하면 이 시간 줄의 점심 예외(×로 연 칸)를 전부 점심시간으로 복구합니다.";
+              tTime.addEventListener("click", () => restoreLunchRowAcrossRange(slotStartMin));
+            }
+          } catch (e) {
+            console.error("time-col lunch restore setup", e);
+          }
           tr.appendChild(tTime);
           appendDayCellsForSlot(tr, slotStartMin, prevSignatureByDayIndex, si);
           tbody.appendChild(tr);
@@ -1962,6 +2077,7 @@
 
     wireFlatpickrRangeInputs();
     stripAssignmentExtras();
+    syncCalendarOffViewButton();
     renderPersonPicker();
     renderCalendar();
     persist();
