@@ -423,6 +423,13 @@ body {
   padding: 0.4rem 0.4rem;
 }
 
+/** 전환 버튼 아래 한 줄 여백 후 구분선, 그 아래 이름 칩 */
+.person-picker-rail .picker-chips-section {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
 .person-picker-panel .picker-section-head {
   margin-bottom: 0;
 }
@@ -441,7 +448,7 @@ body {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   /* 칩 크기·패딩은 유지하고 간격만 넓혀 오선택 방지 */
   gap: 0.65rem 0.55rem;
-  margin-top: 0.75rem;
+  margin-top: 0;
   align-items: stretch;
 }
 

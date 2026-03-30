@@ -7,7 +7,7 @@
   "use strict";
 
   /** UI·배포 확인용(수정 배포 시 0.01씩 증가) */
-  const APP_VERSION = "1.23";
+  const APP_VERSION = "1.24";
 
   /** 빈 칸 호버로 지정: 1.5배 강제·배정 제외(점심과 별개) */
   const SLOT_CELL_MODE_MUL = "mul";
