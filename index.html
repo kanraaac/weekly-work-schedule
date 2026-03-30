@@ -100,7 +100,13 @@
     </section>
 
     <section class="panel calendar-panel" aria-labelledby="lbl-cal">
-      <h2 id="lbl-cal">주별 달력</h2>
+      <div class="calendar-section-head">
+        <h2 id="lbl-cal">주별 달력</h2>
+        <span id="calendarViewModeLabel" class="calendar-view-mode-label">(배정으로 표시)</span>
+        <button type="button" id="btnCalendarOffView" class="btn-panel btn-calendar-off-view" aria-pressed="false">
+          눌러서 오프로 보기
+        </button>
+      </div>
       <div id="calendarMain" class="calendar-main"></div>
     </section>
 

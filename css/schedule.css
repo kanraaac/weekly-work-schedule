@@ -377,6 +377,40 @@ body {
   padding: 0.75rem 0.5rem;
 }
 
+/** 주별 달력 패널: 제목과 오프/배정 보기 토글 */
+.calendar-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  column-gap: 0.45rem;
+  row-gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.calendar-section-head h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.calendar-view-mode-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.btn-calendar-off-view {
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.btn-calendar-off-view[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
 .week-block {
   margin-bottom: 1.5rem;
   overflow-x: auto;

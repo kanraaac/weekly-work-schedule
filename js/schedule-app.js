@@ -7,7 +7,7 @@
   "use strict";
 
   /** UI·배포 확인용(수정 배포 시 0.01씩 증가) */
-  const APP_VERSION = "1.06";
+  const APP_VERSION = "1.09";
 
   const SLOT_MINUTES = 30;
   const MULTIPLIER_WEIGHT = 1.5;
@@ -330,6 +330,25 @@
     return "slot-chips--cols-3";
   }
 
+  /**
+   * 이름이 등록된 인덱스 중, 해당 슬롯 배정 목록에 없는 인덱스(오프 표시용)
+   * @param {string[]} names getNames() 결과
+   * @param {number[]} assignedSorted filterToNamedPersonIndices 이후 배정 인덱스
+   */
+  function getOffPersonIndexesForSlot(names, assignedSorted) {
+    const assignedSet = new Set(assignedSorted);
+    const offList = [];
+    for (let i = 0; i < MAX_PEOPLE; i++) {
+      try {
+        if ((names[i] || "").trim() === "") continue;
+        if (!assignedSet.has(i)) offList.push(i);
+      } catch (e) {
+        console.error("getOffPersonIndexesForSlot", e);
+      }
+    }
+    return offList;
+  }
+
   /** 상태 로드 */
   function loadState() {
     try {
@@ -387,6 +406,8 @@
     let slotAssignmentClipboard = null;
     /** 상단 '복사하기'·'붙여넣기' 버튼으로 다음 클릭 칸에 적용(null | 'copy' | 'paste') */
     let slotPickMode = null;
+    /** true면 셀 칩에 미배정(오프) 인원 표시 — 오른쪽 숫자는 항상 배정 인원 수 */
+    let isCalendarOffViewMode = false;
 
     /** 평일 1.5배 구간(분) — 토요일은 항상 1.5배 */
     function getWeekdayMulMinutesBounds() {
@@ -1341,23 +1362,29 @@
 
         const tbody = document.createElement("tbody");
 
-        /** td에 배정 UI·이벤트 장착 */
+        /** td에 배정 UI·이벤트 장착 — 오프 보기 시 칩은 미배정 인원, 배정 인원 수 배지는 유지 */
         function mountAssignableSlot(host, dStr, dd, slotStartMin) {
           if (isSlotMulForAssignment(dd, slotStartMin)) host.classList.add("slot-mul-hour");
           const key = slotStorageKey(dStr, slotStartMin);
           const names = getNames();
           const indexes = filterToNamedPersonIndices(names, getSlotPersonIndexes(assignments[key]));
+          const displayIndexes = isCalendarOffViewMode
+            ? getOffPersonIndexesForSlot(names, indexes)
+            : indexes;
 
           const inner = document.createElement("div");
           inner.className = "slot-inner";
 
           if (indexes.length > 0) {
             host.classList.add("has-assign");
+          }
+
+          if (displayIndexes.length > 0) {
             const wrap = document.createElement("div");
             wrap.className = "slot-chips-wrap";
             const chips = document.createElement("div");
-            chips.className = `slot-chips ${slotChipsColClass(indexes.length)}`;
-            indexes.forEach((pi) => {
+            chips.className = `slot-chips ${slotChipsColClass(displayIndexes.length)}`;
+            displayIndexes.forEach((pi) => {
               const chip = document.createElement("span");
               chip.className = "slot-chip";
               const label = slotPersonDisplayName(names, pi);
@@ -1369,15 +1396,19 @@
             wrap.appendChild(chips);
             inner.appendChild(wrap);
 
+            inner.style.backgroundColor = displayIndexes.length === 1 ? "transparent" : "#f1f5f9";
+            inner.style.borderLeft =
+              displayIndexes.length > 1
+                ? `2px solid ${PERSON_COLORS[displayIndexes[0] % PERSON_COLORS.length]}`
+                : "";
+          }
+
+          if (indexes.length > 0) {
             const cntEl = document.createElement("div");
             cntEl.className = "slot-assign-count";
             cntEl.textContent = String(indexes.length);
             cntEl.title = `배정 ${indexes.length}명`;
             inner.appendChild(cntEl);
-
-            inner.style.backgroundColor = indexes.length === 1 ? "transparent" : "#f1f5f9";
-            inner.style.borderLeft =
-              indexes.length > 1 ? `2px solid ${PERSON_COLORS[indexes[0] % PERSON_COLORS.length]}` : "";
           }
 
           host.appendChild(inner);
@@ -1656,6 +1687,40 @@
       } catch (e) {
         console.error("btnSlotPasteMode", e);
         showToast("동작을 시작할 수 없습니다.");
+      }
+    });
+
+    const BTN_CALENDAR_LABEL_TO_OFF = "눌러서 오프로 보기";
+    const BTN_CALENDAR_LABEL_TO_ASSIGN = "눌러서 배정으로 보기";
+    const CALENDAR_VIEW_STATUS_ASSIGN = "(배정으로 표시)";
+    const CALENDAR_VIEW_STATUS_OFF = "(오프로 표시)";
+
+    /** 오프/배정 보기: 버튼·상태 문구·aria-pressed 동기화 */
+    function syncCalendarOffViewButton() {
+      const btn = document.getElementById("btnCalendarOffView");
+      const labelEl = document.getElementById("calendarViewModeLabel");
+      if (!btn) return;
+      try {
+        btn.textContent = isCalendarOffViewMode ? BTN_CALENDAR_LABEL_TO_ASSIGN : BTN_CALENDAR_LABEL_TO_OFF;
+        btn.setAttribute("aria-pressed", isCalendarOffViewMode ? "true" : "false");
+        if (labelEl) {
+          labelEl.textContent = isCalendarOffViewMode ? CALENDAR_VIEW_STATUS_OFF : CALENDAR_VIEW_STATUS_ASSIGN;
+        }
+      } catch (e) {
+        console.error("syncCalendarOffViewButton", e);
+      }
+    }
+
+    document.getElementById("btnCalendarOffView")?.addEventListener("click", () => {
+      try {
+        isCalendarOffViewMode = !isCalendarOffViewMode;
+        syncCalendarOffViewButton();
+        renderCalendar();
+      } catch (e) {
+        console.error("btnCalendarOffView", e);
+        isCalendarOffViewMode = !isCalendarOffViewMode;
+        syncCalendarOffViewButton();
+        showToast("화면 전환 중 오류가 났습니다. 다시 시도해 주세요.");
       }
     });
 
