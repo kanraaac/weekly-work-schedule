@@ -7,14 +7,14 @@
   "use strict";
 
   /** UI·배포 확인용(수정 배포 시 0.01씩 증가) */
-  const APP_VERSION = "1.11";
+  const APP_VERSION = "1.14";
 
   const SLOT_MINUTES = 30;
   const MULTIPLIER_WEIGHT = 1.5;
   /** 근무시간 select 선택 가능 범위 (08:00~22:00, 30분 단위) — 초기값은 아래 DEFAULT_* */
   const WORK_HOUR_SELECT_MIN = 8 * 60;
   const WORK_HOUR_SELECT_MAX = 22 * 60;
-  const DEFAULT_WORK_START = "08:30";
+  const DEFAULT_WORK_START = "09:00";
   const DEFAULT_WORK_END = "21:00";
   const MAX_PEOPLE = 10;
   /** 달력에 표시할 요일 수 (월~토, 일요일 제외) */
@@ -22,7 +22,7 @@
   const STORAGE_KEY = "clinicSchedule_v1";
   const EXPORT_FILE_VERSION = 1;
   /** 시간 설정 기본값(30분 격자) — 평일 1.5배·점심 초기 셀렉트 */
-  const DEFAULT_WEEKDAY_MUL_START = "18:00";
+  const DEFAULT_WEEKDAY_MUL_START = "18:30";
   const DEFAULT_WEEKDAY_MUL_END = "21:00";
   const DEFAULT_LUNCH_START = "12:30";
   const DEFAULT_LUNCH_END = "14:00";
@@ -47,7 +47,7 @@
   /**
    * 근무/표시용 슬롯 시작 시각(분) 목록
    * 종료 시각 endMin은 마감(해당 시각까지 근무)으로 보고, 각 행은 30분 칸의 시작이므로
-   * 마지막 시작은 endMin 직전(예: 08:30~21:00 → 20:30~21:00 칸까지, 21:00 시작 행 없음)
+   * 마지막 시작은 endMin 직전(예: 09:00~21:00 → 20:30~21:00 칸까지, 21:00 시작 행 없음)
    */
   function buildSlotMinutesList(startMin, endMin) {
     const list = [];
@@ -440,7 +440,7 @@
       if (a == null || b == null) {
         const ds = parseHHMMToMinutes(DEFAULT_WORK_START);
         const de = parseHHMMToMinutes(DEFAULT_WORK_END);
-        if (ds == null || de == null) return buildSlotMinutesList(8 * 60 + 30, 21 * 60);
+        if (ds == null || de == null) return buildSlotMinutesList(9 * 60, 21 * 60);
         return buildSlotMinutesList(ds, de);
       }
       let s0 = snapMinutesToHalfHourGrid(Math.min(a, b));
@@ -1057,7 +1057,7 @@
       DRAG_THRESHOLD_PX: 6,
     };
 
-    /** 칸 클릭: 배정 보기는 배정 토글. 오프 보기는 빈 칸에서 첫 클릭만 «선택 인원=오프, 나머지 배정» */
+    /** 칸 클릭: 배정 보기는 배정 토글. 오프 보기는 «선택 인원=오프» 토글(기존 오프는 유지) */
     function applyToggleToSlotKey(key) {
       if (isKeyBlockedByLunch(key)) return;
       if (selectedPersonIndex < 0) {
@@ -1068,10 +1068,22 @@
       let ids = filterToNamedPersonIndices(namesNow, getSlotPersonIndexes(assignments[key]));
       const idx = selectedPersonIndex;
       try {
-        if (isCalendarOffViewMode && ids.length === 0) {
-          ids = getAllNamedPersonIndices(namesNow)
-            .filter((i) => i !== idx)
-            .sort((a, b) => a - b);
+        if (isCalendarOffViewMode) {
+          /* 빈 칸: 첫 오프 지정 → 나머지 전원 배정 */
+          if (ids.length === 0) {
+            const nextIds = getAllNamedPersonIndices(namesNow)
+              .filter((i) => i !== idx)
+              .sort((a, b) => a - b);
+            if (nextIds.length === 0) delete assignments[key];
+            else assignments[key] = { personIndexes: nextIds };
+            return;
+          }
+          /* 배정이 있는 칸: 선택 인원을 배정에서 빼면(off 추가), 이미 off면 다시 배정에 포함 */
+          if (ids.includes(idx)) {
+            ids = ids.filter((x) => x !== idx);
+          } else {
+            ids = [...new Set([...ids, idx])].sort((a, b) => a - b);
+          }
           if (ids.length === 0) delete assignments[key];
           else assignments[key] = { personIndexes: ids };
           return;
@@ -1085,7 +1097,7 @@
       }
     }
 
-    /** 드래그 중: 배정 보기는 인원 추가. 오프 보기는 빈 칸만 «선택 인원 제외 전원 배정» */
+    /** 드래그 중: 배정 보기는 인원 추가. 오프 보기는 지나가는 칸에서 «선택 인원=오프»를 누적 */
     function applyPaintToSlotKey(key) {
       if (isKeyBlockedByLunch(key)) return;
       if (selectedPersonIndex < 0 || !key) return;
@@ -1093,10 +1105,19 @@
       let ids = filterToNamedPersonIndices(namesNow, getSlotPersonIndexes(assignments[key]));
       const idx = selectedPersonIndex;
       try {
-        if (isCalendarOffViewMode && ids.length === 0) {
-          ids = getAllNamedPersonIndices(namesNow)
-            .filter((i) => i !== idx)
-            .sort((a, b) => a - b);
+        if (isCalendarOffViewMode) {
+          /* 빈 칸: 첫 오프 지정 → 나머지 전원 배정 */
+          if (ids.length === 0) {
+            const nextIds = getAllNamedPersonIndices(namesNow)
+              .filter((i) => i !== idx)
+              .sort((a, b) => a - b);
+            if (nextIds.length === 0) delete assignments[key];
+            else assignments[key] = { personIndexes: nextIds };
+            return;
+          }
+          /* 배정이 있는 칸: 선택 인원이 배정에 있으면 제거(off 추가), 이미 off면 유지 */
+          if (!ids.includes(idx)) return;
+          ids = ids.filter((x) => x !== idx);
           if (ids.length === 0) delete assignments[key];
           else assignments[key] = { personIndexes: ids };
           return;
@@ -1402,7 +1423,77 @@
 
         const tbody = document.createElement("tbody");
 
-        /** td에 배정 UI·이벤트 장착 — 오프 보기 시 칩은 미배정 인원, 배정 인원 수 배지는 유지 */
+        const slotList = getWorkSlotMinutesList();
+        const nSlots = slotList.length;
+
+        /**
+         * 같은 주·같은 날짜 열에서 슬롯별 표시 시그니처(배정/오프 보기와 동일 규칙)
+         */
+        function displaySignatureForWeekGridCell(di, slotStartMin) {
+          try {
+            const dd = new Date(ws);
+            dd.setDate(dd.getDate() + di);
+            if (dd < start || dd > end) return "";
+            if (isLunchCell(dd, slotStartMin)) return "";
+            const dStr = formatDateOnly(dd);
+            const names = getNames();
+            const key = slotStorageKey(dStr, slotStartMin);
+            const indexes = filterToNamedPersonIndices(names, getSlotPersonIndexes(assignments[key]));
+            const displayIndexes = isCalendarOffViewMode
+              ? indexes.length === 0
+                ? []
+                : getOffPersonIndexesForSlot(names, indexes)
+              : indexes;
+            return displayIndexes.length ? displayIndexes.join(",") : "";
+          } catch (e) {
+            console.error("displaySignatureForWeekGridCell", e);
+            return "";
+          }
+        }
+
+        /** [si][di] 표시 시그니처 — 연속 동일 블록·외곽 테두리 계산용 */
+        const sigGrid = [];
+        for (let si = 0; si < nSlots; si++) {
+          const slotStartMin = slotList[si];
+          const rowSig = [];
+          for (let di = 0; di < DISPLAY_DAYS_MON_SAT; di++) {
+            rowSig.push(displaySignatureForWeekGridCell(di, slotStartMin));
+          }
+          sigGrid.push(rowSig);
+        }
+
+        /** 같은 날짜에서 위아래 연속 동일 표시(2칸 이상)일 때 첫/중/끝 역할 */
+        const mergeRunRoleBySlot = Array.from({ length: nSlots }, () =>
+          Array.from({ length: DISPLAY_DAYS_MON_SAT }, () => null)
+        );
+        for (let di = 0; di < DISPLAY_DAYS_MON_SAT; di++) {
+          let si = 0;
+          while (si < nSlots) {
+            const sig = sigGrid[si][di];
+            if (!sig) {
+              si++;
+              continue;
+            }
+            let s = si;
+            while (s + 1 < nSlots && sigGrid[s + 1][di] === sig) {
+              s++;
+            }
+            if (s > si) {
+              for (let k = si; k <= s; k++) {
+                if (k === si) mergeRunRoleBySlot[k][di] = "first";
+                else if (k === s) mergeRunRoleBySlot[k][di] = "last";
+                else mergeRunRoleBySlot[k][di] = "mid";
+              }
+            }
+            si = s + 1;
+          }
+        }
+
+        /**
+         * td에 배정 UI·이벤트 장착
+         * - 오프 보기 시 칩은 미배정 인원(오프) 표시, 배정 인원 수 배지는 유지
+         * - 반환값: 현재 표시 기준 시그니처(같은 날짜 위아래 연속 동일 희미 처리용)
+         */
         function mountAssignableSlot(host, dStr, dd, slotStartMin) {
           if (isSlotMulForAssignment(dd, slotStartMin)) host.classList.add("slot-mul-hour");
           const key = slotStorageKey(dStr, slotStartMin);
@@ -1414,6 +1505,7 @@
               ? []
               : getOffPersonIndexesForSlot(names, indexes)
             : indexes;
+          const displaySignature = displayIndexes.length ? displayIndexes.join(",") : "";
 
           const inner = document.createElement("div");
           inner.className = "slot-inner";
@@ -1519,10 +1611,11 @@
             },
             { passive: false }
           );
+          return displaySignature;
         }
 
         /** 한 슬롯 행의 월~토 칸 추가 */
-        function appendDayCellsForSlot(trEl, slotStartMin) {
+        function appendDayCellsForSlot(trEl, slotStartMin, prevSignatureByDayIndex, slotIndex) {
           for (let di = 0; di < DISPLAY_DAYS_MON_SAT; di++) {
             const dd = new Date(ws);
             dd.setDate(dd.getDate() + di);
@@ -1536,18 +1629,36 @@
             if (lunchHere) td.classList.add("is-lunch");
 
             if (!isOut && lunchHere) {
+              prevSignatureByDayIndex[di] = "";
               trEl.appendChild(td);
               continue;
             }
 
-            if (!isOut) mountAssignableSlot(td, dStr, dd, slotStartMin);
+            if (!isOut) {
+              const sigNow = mountAssignableSlot(td, dStr, dd, slotStartMin);
+              /* 같은 날짜(같은 요일 열)에서 위아래 연속 동일 표시만 희미 처리 */
+              if (sigNow && sigNow === prevSignatureByDayIndex[di]) {
+                td.classList.add("is-dup-continue");
+              }
+              const mergeRole = mergeRunRoleBySlot[slotIndex][di];
+              if (mergeRole === "first") {
+                td.classList.add("slot-merge-run", "slot-merge-run--first");
+              } else if (mergeRole === "mid") {
+                td.classList.add("slot-merge-run", "slot-merge-run--mid");
+              } else if (mergeRole === "last") {
+                td.classList.add("slot-merge-run", "slot-merge-run--last");
+              }
+              prevSignatureByDayIndex[di] = sigNow || "";
+            } else {
+              prevSignatureByDayIndex[di] = "";
+            }
 
             trEl.appendChild(td);
           }
         }
 
-        const slotList = getWorkSlotMinutesList();
-        const nSlots = slotList.length;
+        /** 요일 열(월~토)별 직전 슬롯의 표시 시그니처 */
+        const prevSignatureByDayIndex = Array.from({ length: DISPLAY_DAYS_MON_SAT }, () => "");
         for (let si = 0; si < nSlots; si++) {
           const slotStartMin = slotList[si];
           const tr = document.createElement("tr");
@@ -1555,7 +1666,7 @@
           tTime.className = "time-col";
           tTime.textContent = minutesToLabel(slotStartMin);
           tr.appendChild(tTime);
-          appendDayCellsForSlot(tr, slotStartMin);
+          appendDayCellsForSlot(tr, slotStartMin, prevSignatureByDayIndex, si);
           tbody.appendChild(tr);
         }
         tbl.appendChild(tbody);

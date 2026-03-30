@@ -507,6 +507,78 @@ body {
   filter: brightness(0.96);
 }
 
+.slot-cell.is-dup-continue:not(.is-out):not(.is-lunch) {
+  border-color: rgba(148, 163, 184, 0.22);
+  box-shadow: none;
+}
+
+/* 연속 동일 칸: 내용과 구분선을 희미하게(크기/레이아웃은 유지) */
+.slot-cell.is-dup-continue:not(.is-out):not(.is-lunch) .slot-inner {
+  opacity: 0.16;
+}
+
+.slot-cell.is-dup-continue:not(.is-out):not(.is-lunch):hover {
+  filter: brightness(1);
+}
+
+/**
+ * 같은 날짜 열에서 연속 동일 표시(2칸 이상) 블록의 바깥을 한 번 더 감싼 찐한 테두리
+ * (셀 간 border-spacing 때문에 내부 가로 경계는 얇게 유지)
+ */
+.slot-cell.slot-merge-run--first:not(.is-out):not(.is-lunch) {
+  border-top-color: #0f172a;
+  border-top-width: 2px;
+  border-left-color: #0f172a;
+  border-left-width: 2px;
+  border-right-color: #0f172a;
+  border-right-width: 2px;
+  border-bottom-color: rgba(15, 23, 42, 0.22);
+  border-bottom-width: 1px;
+}
+
+.slot-cell.slot-merge-run--mid:not(.is-out):not(.is-lunch) {
+  border-left-color: #0f172a;
+  border-left-width: 2px;
+  border-right-color: #0f172a;
+  border-right-width: 2px;
+  border-top-color: rgba(15, 23, 42, 0.22);
+  border-bottom-color: rgba(15, 23, 42, 0.22);
+  border-top-width: 1px;
+  border-bottom-width: 1px;
+}
+
+.slot-cell.slot-merge-run--last:not(.is-out):not(.is-lunch) {
+  border-bottom-color: #0f172a;
+  border-bottom-width: 2px;
+  border-left-color: #0f172a;
+  border-left-width: 2px;
+  border-right-color: #0f172a;
+  border-right-width: 2px;
+  border-top-color: rgba(15, 23, 42, 0.22);
+  border-top-width: 1px;
+}
+
+.slot-cell.slot-mul-hour.slot-merge-run--first:not(.is-out):not(.is-lunch) {
+  border-top-color: #0f172a;
+  border-left-color: #0f172a;
+  border-right-color: #0f172a;
+  border-bottom-color: rgba(15, 23, 42, 0.32);
+}
+
+.slot-cell.slot-mul-hour.slot-merge-run--mid:not(.is-out):not(.is-lunch) {
+  border-left-color: #0f172a;
+  border-right-color: #0f172a;
+  border-top-color: rgba(15, 23, 42, 0.32);
+  border-bottom-color: rgba(15, 23, 42, 0.32);
+}
+
+.slot-cell.slot-mul-hour.slot-merge-run--last:not(.is-out):not(.is-lunch) {
+  border-bottom-color: #0f172a;
+  border-left-color: #0f172a;
+  border-right-color: #0f172a;
+  border-top-color: rgba(15, 23, 42, 0.32);
+}
+
 .slot-cell.is-out {
   background: #e2e8f0;
   border-color: #a8b4c4;
@@ -592,7 +664,7 @@ body {
 
 .slot-chip {
   display: block;
-  font-size: 0.54rem;
+  font-size: 0.58rem;
   font-weight: 700;
   line-height: 1.15;
   color: #0f172a;
@@ -606,7 +678,7 @@ body {
 }
 
 .slot-chips--cols-1 .slot-chip {
-  font-size: 0.58rem;
+  font-size: 0.62rem;
 }
 
 .slot-cell.has-assign .slot-inner {
