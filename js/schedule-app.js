@@ -7,7 +7,7 @@
   "use strict";
 
   /** UI·배포 확인용(수정 배포 시 0.01씩 증가) */
-  const APP_VERSION = "1.22";
+  const APP_VERSION = "1.23";
 
   /** 빈 칸 호버로 지정: 1.5배 강제·배정 제외(점심과 별개) */
   const SLOT_CELL_MODE_MUL = "mul";
@@ -2166,6 +2166,17 @@
 
       const names = getNames();
       const workSlotSet = new Set(getWorkSlotMinutesList());
+      const DOW_LABELS = ["", "월", "화", "수", "목", "금", "토"];
+      /** 기간 안 월~토 각 요일이 몇 번 등장하는지(요일별 평균 분모) */
+      const weekdayCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
+      try {
+        for (let cur = new Date(start.getTime()); cur <= end; cur.setDate(cur.getDate() + 1)) {
+          const dow = cur.getDay();
+          if (dow >= 1 && dow <= 6) weekdayCounts[dow] += 1;
+        }
+      } catch (e) {
+        console.error("renderStats weekdayCounts", e);
+      }
 
       const perPersonWeekTotals = Array.from({ length: MAX_PEOPLE }, () =>
         Object.fromEntries(weekKeys.map((k) => [k, 0]))
@@ -2173,6 +2184,14 @@
       const perPersonMonthTotals = Array.from({ length: MAX_PEOPLE }, () =>
         Object.fromEntries(monthKeys.map((k) => [k, 0]))
       );
+      const perPersonDowTotals = Array.from({ length: MAX_PEOPLE }, () => ({
+        1: 0,
+        2: 0,
+        3: 0,
+        4: 0,
+        5: 0,
+        6: 0,
+      }));
 
       Object.keys(assignments).forEach((key) => {
         const dStr = key.split("|")[0];
@@ -2191,9 +2210,11 @@
         const h = effectiveHours(isSlotMulEffective(key, d, slotStartMin));
         const wk = weekKeyFromDate(d);
         const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        const dow = d.getDay();
         ids.forEach((pid) => {
           if (perPersonWeekTotals[pid][wk] != null) perPersonWeekTotals[pid][wk] += h;
           if (perPersonMonthTotals[pid][mk] != null) perPersonMonthTotals[pid][mk] += h;
+          if (dow >= 1 && dow <= 6) perPersonDowTotals[pid][dow] += h;
         });
       });
 
@@ -2201,7 +2222,7 @@
       tbl.className = "stats-table";
       const head = document.createElement("thead");
       const hr = document.createElement("tr");
-      ["이름", "평균 주간 근무(시간)", "기간 전체(시간)", "월별 근무(시간)"].forEach((t) => {
+      ["이름", "평균 주간·요일별(시간)", "기간 전체(시간)", "월별 근무(시간)"].forEach((t) => {
         const th = document.createElement("th");
         th.textContent = t;
         hr.appendChild(th);
@@ -2219,9 +2240,24 @@
         const tdN = document.createElement("td");
         tdN.textContent = nm;
         const tdAvg = document.createElement("td");
+        tdAvg.className = "stats-avg-byday";
         const sumWeeks = weekKeys.reduce((s, k) => s + perPersonWeekTotals[i][k], 0);
         const avg = sumWeeks / numWeeks;
-        tdAvg.textContent = avg.toFixed(2);
+        const lineWeek = document.createElement("div");
+        lineWeek.className = "stats-line-week-avg";
+        lineWeek.textContent = `주간 ${avg.toFixed(2)}`;
+        const dowParts = [];
+        for (let dow = 1; dow <= 6; dow++) {
+          const cnt = weekdayCounts[dow];
+          const tot = perPersonDowTotals[i][dow];
+          if (cnt <= 0) dowParts.push(`${DOW_LABELS[dow]} —`);
+          else dowParts.push(`${DOW_LABELS[dow]} ${(tot / cnt).toFixed(2)}`);
+        }
+        const lineDow = document.createElement("div");
+        lineDow.className = "stats-line-dow-avg";
+        lineDow.textContent = dowParts.join(" · ");
+        tdAvg.appendChild(lineWeek);
+        tdAvg.appendChild(lineDow);
 
         const tdMo = document.createElement("td");
         const parts = monthKeys.map((mk) => {
@@ -2288,23 +2324,17 @@
 
     const BTN_CALENDAR_LABEL_TO_OFF = "눌러서 오프로 보기";
     const BTN_CALENDAR_LABEL_TO_ASSIGN = "눌러서 배정으로 보기";
-    const CALENDAR_VIEW_STATUS_ASSIGN = "(배정으로 표시)";
-    const CALENDAR_VIEW_STATUS_OFF = "(오프로 표시)";
     const PICK_SECTION_TITLE_ASSIGN = "배정할 사람 선택";
     const PICK_SECTION_TITLE_OFF = "오프인 사람 선택";
 
-    /** 오프/배정 보기: 버튼·상태 문구·선택 영역 제목·aria-pressed 동기화 */
+    /** 오프/배정 보기: 버튼 문구·선택 영역 제목·aria-pressed 동기화 */
     function syncCalendarOffViewButton() {
       const btn = document.getElementById("btnCalendarOffView");
-      const labelEl = document.getElementById("calendarViewModeLabel");
       const pickTitle = document.getElementById("lbl-pick");
       try {
         if (btn) {
           btn.textContent = isCalendarOffViewMode ? BTN_CALENDAR_LABEL_TO_ASSIGN : BTN_CALENDAR_LABEL_TO_OFF;
           btn.setAttribute("aria-pressed", isCalendarOffViewMode ? "true" : "false");
-        }
-        if (labelEl) {
-          labelEl.textContent = isCalendarOffViewMode ? CALENDAR_VIEW_STATUS_OFF : CALENDAR_VIEW_STATUS_ASSIGN;
         }
         if (pickTitle) {
           pickTitle.textContent = isCalendarOffViewMode ? PICK_SECTION_TITLE_OFF : PICK_SECTION_TITLE_ASSIGN;

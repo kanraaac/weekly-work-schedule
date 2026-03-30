@@ -352,10 +352,139 @@ body {
   flex-shrink: 0;
 }
 
-.toolbar-hint {
-  font-size: 0.8rem;
+/** 인원 레일: 달력 조작 기능 요약(라벨 | 값 형태) */
+.toolbar-feature-list {
+  list-style: none;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  font-size: 0.72rem;
   color: var(--muted);
-  margin-top: 0.5rem;
+  line-height: 1.35;
+  display: flex;
+  flex-direction: column;
+  gap: 0.32rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.5rem;
+}
+
+.toolbar-feature-list li {
+  margin: 0;
+  padding: 0;
+  line-height: 1.45;
+  word-break: keep-all;
+}
+
+.toolbar-feature-list strong {
+  font-weight: 700;
+  color: var(--text);
+}
+
+/**
+ * 달력 + 인원 선택: 왼쪽 세로 레일은 sticky로 스크롤 시에도 고정, 칩은 세로 스택
+ */
+.calendar-workspace {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.calendar-workspace .panel {
+  margin-bottom: 0;
+}
+
+.person-picker-rail {
+  flex: 0 0 auto;
+  /* gap 증가분만큼 넓혀 두 열 칩 너비는 이전과 동일하게 유지 */
+  width: 11.85rem;
+  max-width: min(11.85rem, 32vw);
+  position: sticky;
+  top: 0.75rem;
+  z-index: 40;
+  align-self: flex-start;
+  max-height: calc(100vh - 1.25rem);
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+/** 왼쪽 고정 레일: 오프/배정 보기 전환(제목 바로 아래) */
+.picker-off-assign-toggle {
+  margin-top: 0.35rem;
+}
+
+.picker-off-assign-toggle .btn-calendar-off-view {
+  width: 100%;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.25;
+  padding: 0.4rem 0.4rem;
+}
+
+.person-picker-panel .picker-section-head {
+  margin-bottom: 0;
+}
+
+.person-picker-panel .picker-section-head h2 {
+  font-size: 0.95rem;
+  line-height: 1.25;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.person-picker-rail .person-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* 칩 크기·패딩은 유지하고 간격만 넓혀 오선택 방지 */
+  gap: 0.65rem 0.55rem;
+  margin-top: 0.75rem;
+  align-items: stretch;
+}
+
+.person-picker-rail .person-chip {
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  padding: 0.3rem 0.4rem;
+}
+
+.calendar-workspace-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+@media (max-width: 800px) {
+  .calendar-workspace {
+    flex-direction: column;
+    flex-wrap: wrap;
+  }
+
+  .person-picker-rail {
+    position: static;
+    max-height: none;
+    width: 100%;
+    max-width: none;
+    overflow-y: visible;
+  }
+
+  .person-picker-rail .person-picker {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+    gap: 0.65rem 0.55rem;
+    align-items: stretch;
+  }
+
+  .person-picker-rail .person-chip {
+    width: auto;
+    min-width: 0;
+    border-radius: 999px;
+  }
 }
 
 .picker-empty-hint {
@@ -385,13 +514,6 @@ body {
 .calendar-section-head h2 {
   margin: 0;
   font-size: 1.15rem;
-}
-
-.calendar-view-mode-label {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--muted);
-  white-space: nowrap;
 }
 
 .btn-calendar-off-view {
@@ -991,6 +1113,20 @@ body {
 .month-breakdown {
   font-size: 0.8rem;
   color: var(--muted);
+}
+
+.stats-avg-byday .stats-line-week-avg {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-avg-byday .stats-line-dow-avg {
+  margin-top: 0.3rem;
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--muted);
+  line-height: 1.4;
+  word-break: keep-all;
 }
 
 .stats-table td.stats-period-total {
