@@ -177,8 +177,13 @@ body {
   min-width: 280px;
 }
 
+/** 시간 설정: 라벨 왼쪽·시간 드롭다운 오른쪽(한 줄), 셀 높이·글자 한 단계 축소 */
 .aside-row {
-  margin-bottom: 0.65rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.45rem 0.6rem;
+  margin-bottom: 0.5rem;
 }
 
 .aside-row:last-child {
@@ -186,21 +191,21 @@ body {
 }
 
 .aside-label {
-  display: block;
   font-weight: 600;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--muted);
-  margin-bottom: 0.3rem;
-  line-height: 1.3;
+  line-height: 1.25;
+  margin: 0;
+  white-space: nowrap;
 }
 
 .aside-time-range {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.35rem;
-  padding: 0.35rem 0.4rem;
+  justify-content: flex-start;
+  gap: 0.28rem;
+  padding: 0.22rem 0.32rem;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -208,27 +213,29 @@ body {
 
 .aside-tilde {
   flex: 0 0 auto;
-  font-size: 0.95rem;
+  font-size: 0.8rem;
   font-weight: 700;
   color: var(--muted);
   line-height: 1;
-  padding: 0 0.1rem;
+  padding: 0 0.06rem;
 }
 
 .range-file-panel .weekday-mul-aside select.aside-time-select {
-  flex: 1 1 0;
-  min-width: 0;
-  padding: 0.4rem 0.35rem;
+  flex: 0 0 auto;
+  width: 4.75rem;
+  min-width: 4.75rem;
+  max-width: 4.75rem;
+  padding: 0.18rem 0.22rem;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 0.88rem;
+  border-radius: 5px;
+  font-size: 0.76rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text);
   background: var(--surface);
-  min-height: 2.25rem;
+  min-height: 1.65rem;
   cursor: pointer;
-  line-height: 1.2;
+  line-height: 1.15;
 }
 
 .range-file-panel .weekday-mul-aside select.aside-time-select:hover {
@@ -306,19 +313,6 @@ body {
 .picker-section-head h2 {
   margin: 0;
   font-size: 1.15rem;
-}
-
-.picker-slot-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  align-items: center;
-}
-
-.btn-slot-mode.is-active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  font-weight: 600;
 }
 
 .person-picker {
@@ -490,6 +484,76 @@ body {
   padding: 7px 6px;
   font-weight: 600;
   border-radius: 5px;
+  position: relative;
+  vertical-align: middle;
+}
+
+/** 요일 헤더: 한 줄 [A] 날짜 [×], 버튼은 호버 시에만 표시 */
+.schedule-table th.day-col .day-col-head {
+  display: grid;
+  grid-template-columns: 1.35rem minmax(0, 1fr) 1.35rem;
+  align-items: center;
+  gap: 2px 4px;
+  min-height: 1.85em;
+}
+
+.schedule-table th.day-col.is-out .day-col-head {
+  display: block;
+  text-align: center;
+  min-height: 0;
+}
+
+.schedule-table th.day-col .day-col-label {
+  line-height: 1.2;
+  text-align: center;
+  justify-self: center;
+}
+
+.schedule-table th.day-col:not(.is-out) .day-col-action-btn {
+  justify-self: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.schedule-table th.day-col:not(.is-out):hover .day-col-action-btn,
+.schedule-table th.day-col:not(.is-out):focus-within .day-col-action-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.schedule-table th.day-col .day-col-action-btn {
+  box-sizing: border-box;
+  min-width: 1.3rem;
+  height: 1.3rem;
+  margin: 0;
+  padding: 0 3px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1;
+  font-family: inherit;
+  color: var(--text);
+  border: 1px solid #64748b;
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset;
+}
+
+.schedule-table th.day-col .day-col-action-btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.schedule-table th.day-col .day-col-action-btn--clear:hover {
+  background: #fee2e2;
+  border-color: #b91c1c;
+  color: #b91c1c;
+}
+
+.schedule-table th.day-col .day-col-action-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.35);
 }
 
 .schedule-table th.day-col.is-out {
@@ -610,39 +674,147 @@ body {
   border-radius: 5px;
 }
 
-/** 점심 칸 오른쪽 위: 이 칸만 일반 진료 시간으로 전환 */
-.lunch-open-slot-btn {
+/** 사용자「제외」칸: 점심 칸과 동일한 회색 톤 */
+.slot-cell.is-excluded-slot:not(.is-out) {
+  background: #e5e7eb !important;
+  border-color: #9ca3af;
+  cursor: default;
+  vertical-align: middle;
+  min-height: 28px;
+}
+
+/**
+ * 빈 칸·제외 칸: 호버 시 `<>`만 → 클릭 시 셀 안 한 줄 [<>][진료][1.5배][제외](팝업 없음)
+ */
+.slot-mode-ui {
   position: absolute;
-  top: 1px;
-  right: 1px;
-  z-index: 3;
-  width: 1.15rem;
-  height: 1.15rem;
+  left: 2px;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 6;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  max-width: calc(100% - 4px);
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.slot-mode-ui .slot-mode-toggle,
+.slot-mode-ui .slot-mode-panel {
+  pointer-events: auto;
+}
+
+.slot-mode-toggle {
+  box-sizing: border-box;
+  flex: 0 0 auto;
   margin: 0;
+  padding: 0 4px;
+  min-height: 17px;
+  font-size: 0.54rem;
+  font-weight: 800;
+  line-height: 1.15;
+  font-family: inherit;
+  color: var(--text);
+  border: 1px solid #64748b;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.96);
+  cursor: pointer;
+  box-shadow: none;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.slot-cell:not(.has-assign):not(.is-out):hover .slot-mode-toggle,
+.slot-cell:not(.has-assign):not(.is-out) .slot-mode-ui.is-open .slot-mode-toggle,
+.slot-cell.is-excluded-slot:not(.is-out):hover .slot-mode-toggle,
+.slot-cell.is-excluded-slot:not(.is-out) .slot-mode-ui.is-open .slot-mode-toggle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.slot-cell:not(.has-assign):not(.is-out):focus-within .slot-mode-toggle,
+.slot-cell.is-excluded-slot:not(.is-out):focus-within .slot-mode-toggle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.slot-mode-panel {
+  display: none;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  flex: 1 1 0;
+  min-width: 0;
+  gap: 2px;
+  box-sizing: border-box;
   padding: 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.slot-mode-ui.is-open .slot-mode-panel {
+  display: flex;
+}
+
+.slot-mode-ui.is-open {
+  pointer-events: auto;
+}
+
+.slot-mode-panel .slot-mode-btn {
+  box-sizing: border-box;
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  padding: 1px 2px;
+  min-height: 17px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  line-height: 1.12;
+  font-family: inherit;
+  color: var(--text);
   border: 1px solid #94a3b8;
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.92);
-  color: #64748b;
-  font-size: 0.85rem;
-  font-weight: 700;
-  line-height: 1;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+  white-space: nowrap;
+  text-align: center;
 }
 
-.lunch-open-slot-btn:hover {
-  background: #fff;
-  color: #b91c1c;
-  border-color: #b91c1c;
+.slot-mode-panel .slot-mode-btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 
-.lunch-open-slot-btn:focus {
+.slot-mode-panel .slot-mode-btn.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  font-weight: 800;
+}
+
+.slot-mode-panel .slot-mode-btn:focus {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.35);
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.35);
+}
+
+.slot-main-hit {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 24px;
+  align-self: stretch;
+}
+
+.slot-inner--mode-only {
+  min-height: 28px;
 }
 
 .slot-inner {
@@ -665,10 +837,14 @@ body {
   align-items: center;
 }
 
-/** 셀 오른쪽 고정: 배정된 총 인원 수(칸 크기 유지, 숫자만 한 단계 확대) */
-.slot-assign-count {
+/** 배정 수 영역: 기본은 숫자, 호버 시 [복사][×] 세로 · 복사 원본이면 항상 버튼+복사 강조 */
+.slot-assign-count-host {
   flex: 0 0 auto;
   align-self: center;
+  position: relative;
+}
+
+.slot-assign-count-num {
   min-width: 22px;
   padding: 2px 5px;
   font-size: 0.65rem;
@@ -679,6 +855,63 @@ body {
   background: #475569;
   border-radius: 4px;
   box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.15);
+}
+
+.slot-assign-count-actions {
+  display: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.slot-assign-count-host:hover .slot-assign-count-num,
+.slot-assign-count-host:focus-within .slot-assign-count-num,
+.slot-assign-count-host.is-copy-source .slot-assign-count-num {
+  display: none;
+}
+
+.slot-assign-count-host:hover .slot-assign-count-actions,
+.slot-assign-count-host:focus-within .slot-assign-count-actions,
+.slot-assign-count-host.is-copy-source .slot-assign-count-actions {
+  display: flex;
+}
+
+.slot-assign-count-action-btn {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 2px 4px;
+  font-size: 0.52rem;
+  font-weight: 700;
+  line-height: 1.15;
+  font-family: inherit;
+  color: var(--text);
+  border: 1px solid #64748b;
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.slot-assign-count-action-btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.slot-assign-count-action-btn--copy.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  font-weight: 800;
+}
+
+.slot-assign-count-action-btn--clear:hover {
+  background: #fee2e2;
+  border-color: #b91c1c;
+  color: #b91c1c;
+}
+
+.slot-assign-count-action-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.35);
 }
 
 /* 사람 배정 칸에는 입력 요소 없음(체크박스는 x1.5 전용 열만) */
@@ -758,6 +991,11 @@ body {
 .month-breakdown {
   font-size: 0.8rem;
   color: var(--muted);
+}
+
+.stats-table td.stats-period-total {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /** 배정 칸 우클릭: 복사·붙여넣기·지우기 */

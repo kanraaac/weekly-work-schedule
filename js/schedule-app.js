@@ -7,7 +7,11 @@
   "use strict";
 
   /** UI·배포 확인용(수정 배포 시 0.01씩 증가) */
-  const APP_VERSION = "1.16";
+  const APP_VERSION = "1.22";
+
+  /** 빈 칸 호버로 지정: 1.5배 강제·배정 제외(점심과 별개) */
+  const SLOT_CELL_MODE_MUL = "mul";
+  const SLOT_CELL_MODE_EXCLUDED = "excluded";
 
   const SLOT_MINUTES = 30;
   const MULTIPLIER_WEIGHT = 1.5;
@@ -15,7 +19,7 @@
   const WORK_HOUR_SELECT_MIN = 8 * 60;
   const WORK_HOUR_SELECT_MAX = 22 * 60;
   const DEFAULT_WORK_START = "09:00";
-  const DEFAULT_WORK_END = "21:00";
+  const DEFAULT_WORK_END = "20:30";
   const MAX_PEOPLE = 10;
   /** 달력에 표시할 요일 수 (월~토, 일요일 제외) */
   const DISPLAY_DAYS_MON_SAT = 6;
@@ -419,11 +423,15 @@
     let assignments = {};
     /** 월~금 점심 구간과 겹치더라도 일반 진료 칸으로 둘 `YYYY-MM-DD|slotStartMin` 키 집합 */
     let lunchExceptionKeys = new Set();
+    /** 칸별 `날짜|슬롯분` → `mul` | `excluded` (없으면 글로벌 규칙과 동일한 일반 진료) */
+    let slotCellOverrides = {};
     let selectedPersonIndex = 0;
     /** 우클릭 메뉴에서 복사한 personIndex 목록(null이면 복사 이력 없음) */
     let slotAssignmentClipboard = null;
-    /** 상단 '복사하기'·'붙여넣기' 버튼으로 다음 클릭 칸에 적용(null | 'copy' | 'paste') */
-    let slotPickMode = null;
+    /** 배정 칸 [복사]로 지정한 원본 슬롯 키(셀에 복사 중 표시·다른 사람 선택 시 해제) */
+    let slotCopyHighlightKey = null;
+    /** 빈 칸·제외 칸 `<>` 클릭 시 열리는 [진료][1.5배][제외] 패널의 슬롯 키 */
+    let slotModePanelOpenKey = null;
     /** true면 셀 칩에 미배정(오프) 인원 표시 — 오른쪽 숫자는 항상 배정 인원 수 (기본: 오프 보기) */
     let isCalendarOffViewMode = true;
 
@@ -512,14 +520,142 @@
       });
     }
 
-    /** 슬롯 키가 월~금 점심이면 배정·페인트 불가(토요일은 점심 없음·1.5배는 유지) */
-    function isKeyBlockedByLunch(key) {
+    function isSlotExcludedByUser(key) {
+      return slotCellOverrides[key] === SLOT_CELL_MODE_EXCLUDED;
+    }
+
+    /** 점심 또는 사용자「제외」칸이면 배정·붙여넣기 등 불가 */
+    function isAssignmentBlocked(key) {
       if (!key) return true;
+      if (isSlotExcludedByUser(key)) return true;
       const dStr = key.split("|")[0];
       const slotStartMin = slotStartMinFromKey(key);
       if (slotStartMin == null) return true;
       const d = parseDateOnly(dStr);
+      if (Number.isNaN(d.getTime())) return true;
       return isLunchCell(d, slotStartMin);
+    }
+
+    /** 표시·집계용 1.5배 여부(사용자「1.5배」지정 시 평일 창과 무관하게 true) */
+    function isSlotMulEffective(key, d, slotStartMin) {
+      if (slotCellOverrides[key] === SLOT_CELL_MODE_MUL) return true;
+      if (slotCellOverrides[key] === SLOT_CELL_MODE_EXCLUDED) return false;
+      return isSlotMulForAssignment(d, slotStartMin);
+    }
+
+    function getSlotCellModeForUi(key) {
+      if (slotCellOverrides[key] === SLOT_CELL_MODE_EXCLUDED) return SLOT_CELL_MODE_EXCLUDED;
+      if (slotCellOverrides[key] === SLOT_CELL_MODE_MUL) return SLOT_CELL_MODE_MUL;
+      return "normal";
+    }
+
+    /**
+     * `<>` 도구줄에서 강조할 모드: 글로벌 점심 칸(아직 예외 없음)은 어느 버튼도 활성 표시 안 함
+     */
+    function getSlotCellToolbarActiveMode(key) {
+      try {
+        const dStr = key.split("|")[0];
+        const slotStartMin = slotStartMinFromKey(key);
+        if (slotStartMin == null) return getSlotCellModeForUi(key);
+        const d = parseDateOnly(dStr);
+        if (Number.isNaN(d.getTime())) return getSlotCellModeForUi(key);
+        if (isLunchCell(d, slotStartMin)) return null;
+        return getSlotCellModeForUi(key);
+      } catch (e) {
+        console.error("getSlotCellToolbarActiveMode", e);
+        return getSlotCellModeForUi(key);
+      }
+    }
+
+    /**
+     * 빈 칸·점심·제외 칸 공통 도구줄: 진료·1.5배·제외(점심 칸이면 선택 시 점심 예외 추가)
+     */
+    function applySlotCellModeFromToolbar(key, mode) {
+      try {
+        slotModePanelOpenKey = null;
+        const dStr = key.split("|")[0];
+        const slotStartMin = slotStartMinFromKey(key);
+        const d = slotStartMin != null ? parseDateOnly(dStr) : new Date(NaN);
+        const isLunchBlock =
+          slotStartMin != null && !Number.isNaN(d.getTime()) && isLunchCell(d, slotStartMin);
+        if (isLunchBlock) lunchExceptionKeys.add(key);
+
+        if (mode === "normal") {
+          delete slotCellOverrides[key];
+          showToast("이 칸을 일반 진료 시간으로 설정했습니다.");
+        } else if (mode === SLOT_CELL_MODE_MUL) {
+          slotCellOverrides[key] = SLOT_CELL_MODE_MUL;
+          showToast("이 칸을 1.5배 적용 시간으로 설정했습니다.");
+        } else if (mode === SLOT_CELL_MODE_EXCLUDED) {
+          slotCellOverrides[key] = SLOT_CELL_MODE_EXCLUDED;
+          delete assignments[key];
+          showToast("이 칸을 배정 제외 시간으로 설정했습니다.");
+        }
+        persist();
+        renderCalendar();
+      } catch (e) {
+        console.error("applySlotCellModeFromToolbar", e);
+        showToast("설정 적용 중 오류가 났습니다. 다시 시도해 주세요.");
+      }
+    }
+
+    function pruneExcludedSlotAssignments() {
+      Object.keys(assignments).forEach((k) => {
+        if (isSlotExcludedByUser(k)) delete assignments[k];
+      });
+    }
+
+    /**
+     * 빈 칸·점심·제외 칸: 호버 시 `<>`만 표시, 클릭 시 셀 안 한 줄로 `<>`·진료·1.5배·제외(좌→우)
+     */
+    function createSlotModeUi(key) {
+      const wrap = document.createElement("div");
+      wrap.className = "slot-mode-ui";
+      wrap.setAttribute("data-slot-mode-key", key);
+      const isPanelOpen = slotModePanelOpenKey === key;
+      if (isPanelOpen) wrap.classList.add("is-open");
+
+      const btnToggle = document.createElement("button");
+      btnToggle.type = "button";
+      btnToggle.className = "slot-mode-toggle";
+      btnToggle.textContent = "<>";
+      btnToggle.title = "진료·1.5배·제외 선택";
+      btnToggle.setAttribute("aria-expanded", isPanelOpen ? "true" : "false");
+      btnToggle.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        slotModePanelOpenKey = slotModePanelOpenKey === key ? null : key;
+        renderCalendar();
+      });
+      btnToggle.addEventListener("mousedown", (ev) => ev.stopPropagation());
+
+      const panel = document.createElement("div");
+      panel.className = "slot-mode-panel";
+      const activeMode = getSlotCellToolbarActiveMode(key);
+      const specs = [
+        { mode: "normal", label: "진료", title: "글로벌 설정과 동일한 일반 진료 칸" },
+        { mode: SLOT_CELL_MODE_MUL, label: "1.5배", title: "이 칸만 1.5배 집계" },
+        { mode: SLOT_CELL_MODE_EXCLUDED, label: "제외", title: "배정 불가·근무 집계에서 제외" },
+      ];
+      specs.forEach((spec) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "slot-mode-btn";
+        btn.textContent = spec.label;
+        btn.title = spec.title;
+        if (activeMode !== null && spec.mode === activeMode) btn.classList.add("is-active");
+        btn.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          applySlotCellModeFromToolbar(key, spec.mode);
+        });
+        btn.addEventListener("mousedown", (ev) => ev.stopPropagation());
+        panel.appendChild(btn);
+      });
+
+      wrap.appendChild(btnToggle);
+      wrap.appendChild(panel);
+      return wrap;
     }
 
     /** 기간 flatpickr 인스턴스(2달 표시) */
@@ -620,6 +756,13 @@
       if (Array.isArray(restored.lunchExceptions)) {
         restored.lunchExceptions.forEach((k) => {
           if (typeof k === "string" && k.indexOf("|") > 0) lunchExceptionKeys.add(k);
+        });
+      }
+      slotCellOverrides = {};
+      if (restored.slotCellOverrides && typeof restored.slotCellOverrides === "object") {
+        Object.keys(restored.slotCellOverrides).forEach((k) => {
+          const v = restored.slotCellOverrides[k];
+          if (v === SLOT_CELL_MODE_MUL || v === SLOT_CELL_MODE_EXCLUDED) slotCellOverrides[k] = v;
         });
       }
       if (typeof restored.weekdayMulStart === "string" && restored.weekdayMulStart.trim() && elWeekdayMulStart) {
@@ -840,10 +983,10 @@
       const namesNow = getNames();
       try {
         if (action === "copy") {
-          const ids = filterToNamedPersonIndices(namesNow, getSlotPersonIndexes(assignments[key]));
-          slotAssignmentClipboard = [...ids];
           hideSlotContextMenu();
-          showToast(ids.length ? "이 칸 배정을 복사했습니다." : "빈 칸을 복사했습니다. 붙여넣기 시 배정이 비워집니다.");
+          applySlotCopyFromKey(key);
+          persist();
+          renderCalendar();
           return;
         }
         if (action === "paste") {
@@ -852,9 +995,9 @@
             showToast("복사한 내용이 없습니다. 먼저 복사하기를 선택하세요.");
             return;
           }
-          if (isKeyBlockedByLunch(key)) {
+          if (isAssignmentBlocked(key)) {
             hideSlotContextMenu();
-            showToast("점심 시간 칸에는 붙여넣을 수 없습니다.");
+            showToast("이 칸에는 붙여넣을 수 없습니다(점심·제외).");
             return;
           }
           const ids = filterToNamedPersonIndices(namesNow, [...slotAssignmentClipboard]);
@@ -868,6 +1011,7 @@
         }
         if (action === "clear") {
           delete assignments[key];
+          if (slotCopyHighlightKey === key) slotCopyHighlightKey = null;
           hideSlotContextMenu();
           persist();
           renderCalendar();
@@ -897,18 +1041,33 @@
       if (ev.key === "Escape") {
         if (elSlotCtxMenu.classList.contains("is-open")) hideSlotContextMenu();
         if (elPersonNameCtxMenu.classList.contains("is-open")) hidePersonNameContextMenu();
-        if (slotPickMode) {
-          clearSlotPickMode();
-          showToast("취소했습니다.");
+        if (slotModePanelOpenKey !== null) {
+          slotModePanelOpenKey = null;
+          renderCalendar();
         }
       }
     });
+
+    document.addEventListener(
+      "click",
+      (ev) => {
+        if (slotModePanelOpenKey === null) return;
+        if (ev.target.closest && ev.target.closest(".slot-mode-ui")) return;
+        slotModePanelOpenKey = null;
+        renderCalendar();
+      },
+      false
+    );
 
     window.addEventListener(
       "scroll",
       () => {
         if (elSlotCtxMenu.classList.contains("is-open")) hideSlotContextMenu();
         if (elPersonNameCtxMenu.classList.contains("is-open")) hidePersonNameContextMenu();
+        if (slotModePanelOpenKey !== null) {
+          slotModePanelOpenKey = null;
+          renderCalendar();
+        }
       },
       true
     );
@@ -932,6 +1091,7 @@
     /** persist */
     function persist() {
       pruneLunchAssignments();
+      pruneExcludedSlotAssignments();
       pruneStaleLunchExceptions();
       stripAssignmentExtras();
       saveState({
@@ -946,6 +1106,7 @@
         workStart: elWorkStart ? elWorkStart.value : "",
         workEnd: elWorkEnd ? elWorkEnd.value : "",
         lunchExceptions: [...lunchExceptionKeys],
+        slotCellOverrides: JSON.parse(JSON.stringify(slotCellOverrides)),
         selectedPersonIndex,
       });
     }
@@ -953,6 +1114,7 @@
     /** 내보낼 JSON 스냅샷 객체 생성 */
     function buildExportPayload() {
       pruneLunchAssignments();
+      pruneExcludedSlotAssignments();
       pruneStaleLunchExceptions();
       stripAssignmentExtras();
       return {
@@ -969,6 +1131,7 @@
         workStart: elWorkStart ? elWorkStart.value : "",
         workEnd: elWorkEnd ? elWorkEnd.value : "",
         lunchExceptions: [...lunchExceptionKeys],
+        slotCellOverrides: JSON.parse(JSON.stringify(slotCellOverrides)),
         selectedPersonIndex,
       };
     }
@@ -998,6 +1161,13 @@
       if (Array.isArray(raw.lunchExceptions)) {
         raw.lunchExceptions.forEach((k) => {
           if (typeof k === "string" && k.indexOf("|") > 0) lunchExceptionKeys.add(k);
+        });
+      }
+      slotCellOverrides = {};
+      if (raw.slotCellOverrides && typeof raw.slotCellOverrides === "object") {
+        Object.keys(raw.slotCellOverrides).forEach((k) => {
+          const v = raw.slotCellOverrides[k];
+          if (v === SLOT_CELL_MODE_MUL || v === SLOT_CELL_MODE_EXCLUDED) slotCellOverrides[k] = v;
         });
       }
       if (elWorkStart) {
@@ -1104,7 +1274,7 @@
 
     /** 칸 클릭: 배정 보기는 배정 토글. 오프 보기는 «선택 인원=오프» 토글(기존 오프는 유지) */
     function applyToggleToSlotKey(key) {
-      if (isKeyBlockedByLunch(key)) return;
+      if (isAssignmentBlocked(key)) return;
       if (selectedPersonIndex < 0) {
         showToast("이름을 입력한 뒤 배정할 사람을 선택하세요.");
         return;
@@ -1144,7 +1314,7 @@
 
     /** 드래그 중: 배정 보기는 인원 추가. 오프 보기는 지나가는 칸에서 «선택 인원=오프»를 누적 */
     function applyPaintToSlotKey(key) {
-      if (isKeyBlockedByLunch(key)) return;
+      if (isAssignmentBlocked(key)) return;
       if (selectedPersonIndex < 0 || !key) return;
       const namesNow = getNames();
       let ids = filterToNamedPersonIndices(namesNow, getSlotPersonIndexes(assignments[key]));
@@ -1177,7 +1347,7 @@
 
     /** Ctrl+드래그 붙여넣기: 복사해 둔 배정으로 칸 전체를 덮어씀 */
     function applyPasteToSlotKey(key) {
-      if (!key || isKeyBlockedByLunch(key)) return;
+      if (!key || isAssignmentBlocked(key)) return;
       if (slotAssignmentClipboard === null) return;
       const namesNow = getNames();
       const ids = filterToNamedPersonIndices(namesNow, [...slotAssignmentClipboard]);
@@ -1185,48 +1355,116 @@
       else assignments[key] = { personIndexes: ids };
     }
 
-    /** Alt+클릭·드래그: 해당 칸 배정 삭제 */
-    function applyEraseToSlotKey(key) {
-      if (!key || isKeyBlockedByLunch(key)) return;
-      delete assignments[key];
+    /**
+     * 기간 안인 특정 날짜 열에서 배정·집계 대상이 되는 슬롯 키만 나열(점심·기간 외 제외)
+     */
+    function getAssignableKeysForDayColumn(dStr, dd) {
+      const startStr = elStart.value;
+      const endStr = elEnd.value;
+      const rangeStart = parseDateOnly(startStr);
+      const rangeEnd = parseDateOnly(endStr);
+      if (Number.isNaN(rangeStart.getTime()) || Number.isNaN(rangeEnd.getTime())) return [];
+      if (dd < rangeStart || dd > rangeEnd) return [];
+      const slotList = getWorkSlotMinutesList();
+      const keys = [];
+      try {
+        for (let si = 0; si < slotList.length; si++) {
+          const slotStartMin = slotList[si];
+          if (isLunchCell(dd, slotStartMin)) continue;
+          const colKey = slotStorageKey(dStr, slotStartMin);
+          if (isSlotExcludedByUser(colKey)) continue;
+          keys.push(colKey);
+        }
+      } catch (e) {
+        console.error("getAssignableKeysForDayColumn", e);
+      }
+      return keys;
     }
 
-    /** 상단 버튼으로 칸 복사 시 clipboard에 넣기 */
+    /**
+     * 요일 헤더 [A]: 일반 클릭은 선택 인원만, Ctrl+클릭은 복사해 둔 칸 배정만 이날 전체에 적용(배정/오프 보기 규칙 동일)
+     */
+    function applyDayHeaderFillAll(dStr, dd, isClipboardPaste) {
+      try {
+        const keys = getAssignableKeysForDayColumn(dStr, dd);
+        if (!keys.length) {
+          showToast("이 날짜에는 적용할 수 있는 칸이 없습니다.");
+          return;
+        }
+        if (isClipboardPaste) {
+          if (slotAssignmentClipboard === null) {
+            showToast("복사된 칸이 없습니다. 먼저 복사한 뒤 Ctrl+클릭으로 붙여넣으세요.");
+            return;
+          }
+          const namesNow = getNames();
+          const templateIds = filterToNamedPersonIndices(namesNow, [...slotAssignmentClipboard]);
+          keys.forEach((key) => {
+            if (isAssignmentBlocked(key)) return;
+            if (templateIds.length === 0) delete assignments[key];
+            else assignments[key] = { personIndexes: [...templateIds] };
+          });
+          persist();
+          renderCalendar();
+          showToast(
+            templateIds.length
+              ? "복사한 배정을 이날 진료 시간 전체에 붙여넣었습니다."
+              : "이날 전체 배정을 비웠습니다(빈 칸 복사)."
+          );
+          return;
+        }
+        if (selectedPersonIndex < 0) {
+          showToast("이날 전체에 넣을 사람을 먼저 선택하세요.");
+          return;
+        }
+        if (isCalendarOffViewMode) {
+          keys.forEach((key) => applyToggleToSlotKey(key));
+        } else {
+          keys.forEach((key) => applyPaintToSlotKey(key));
+        }
+        persist();
+        renderCalendar();
+        showToast("이날 전체 진료 시간에 반영했습니다.");
+      } catch (e) {
+        console.error("applyDayHeaderFillAll", e);
+        showToast("적용 중 오류가 났습니다. 다시 시도해 주세요.");
+      }
+    }
+
+    /**
+     * 요일 헤더 [×]: 해당 일자(YYYY-MM-DD) 배정 키를 모두 삭제
+     */
+    function applyDayHeaderClearAll(dStr) {
+      try {
+        let removed = 0;
+        const prefix = `${dStr}|`;
+        Object.keys(assignments).forEach((k) => {
+          if (k.indexOf(prefix) !== 0) return;
+          delete assignments[k];
+          removed += 1;
+        });
+        persist();
+        renderCalendar();
+        showToast(removed ? "이날 배정을 모두 지웠습니다." : "삭제할 배정이 없었습니다.");
+      } catch (e) {
+        console.error("applyDayHeaderClearAll", e);
+        showToast("삭제 중 오류가 났습니다. 다시 시도해 주세요.");
+      }
+    }
+
+    /** Alt+클릭·드래그: 해당 칸 배정 삭제 */
+    function applyEraseToSlotKey(key) {
+      if (!key || isAssignmentBlocked(key)) return;
+      delete assignments[key];
+      if (slotCopyHighlightKey === key) slotCopyHighlightKey = null;
+    }
+
+    /** 칸 배정을 클립보드에 넣고 원본 칸 하이라이트 키 설정(빈 칸 복사도 동일) */
     function applySlotCopyFromKey(key) {
       const namesNow = getNames();
       const ids = filterToNamedPersonIndices(namesNow, getSlotPersonIndexes(assignments[key]));
       slotAssignmentClipboard = [...ids];
+      slotCopyHighlightKey = key;
       showToast(ids.length ? "이 칸 배정을 복사했습니다." : "빈 칸을 복사했습니다. 붙여넣기 시 배정이 비워집니다.");
-    }
-
-    /** 상단 버튼으로 칸 붙여넣기(점심 칸은 불가) */
-    function applySlotPasteFromKey(key) {
-      if (!key) return;
-      if (isKeyBlockedByLunch(key)) {
-        showToast("점심 시간 칸에는 붙여넣을 수 없습니다.");
-        return;
-      }
-      if (slotAssignmentClipboard === null) {
-        showToast("복사한 내용이 없습니다. 먼저 복사하기를 선택하세요.");
-        return;
-      }
-      applyPasteToSlotKey(key);
-      showToast("붙여넣었습니다.");
-    }
-
-    function clearSlotPickMode() {
-      slotPickMode = null;
-      const btnC = document.getElementById("btnSlotCopyMode");
-      const btnP = document.getElementById("btnSlotPasteMode");
-      if (btnC) btnC.classList.remove("is-active");
-      if (btnP) btnP.classList.remove("is-active");
-    }
-
-    function updateSlotPickModeButtons() {
-      const btnC = document.getElementById("btnSlotCopyMode");
-      const btnP = document.getElementById("btnSlotPasteMode");
-      if (btnC) btnC.classList.toggle("is-active", slotPickMode === "copy");
-      if (btnP) btnP.classList.toggle("is-active", slotPickMode === "paste");
     }
 
     /** 화면 좌표 아래의 배정 셀이면 해당 키에 페인트 */
@@ -1330,16 +1568,19 @@
         btn.appendChild(document.createTextNode(names[i].trim()));
         btn.addEventListener("click", () => {
           selectedPersonIndex = i;
+          slotCopyHighlightKey = null;
+          slotModePanelOpenKey = null;
           renderPersonPicker();
           persist();
+          renderCalendar();
         });
         elPicker.appendChild(btn);
       });
     }
 
     /**
-     * 직전 주(월요일 prevWeekMonday)와 같은 요일·시간대 배정을 이번 주(월요일 currWeekMonday)로 복사
-     * 기간·점심 칸은 제외하고, 현재 이름 목록 기준으로만 유효 인덱스 저장
+     * 직전 주와 같은 요일·슬롯에 대해 배정·점심 예외·칸 특성(mul/제외)을 복사
+     * 이전 주 날짜가 기간 밖이면 해당 열은 배정·특성을 비움(기존 배정 복사 규칙과 동일)
      */
     function applyAssignmentsCopyFromPreviousWeek(prevWeekMonday, currWeekMonday, rangeStart, rangeEnd) {
       const namesNow = getNames();
@@ -1353,22 +1594,44 @@
 
         if (currD < rangeStart || currD > rangeEnd) continue;
 
+        const isPrevDayInRange = prevD >= rangeStart && prevD <= rangeEnd;
+
         for (let si = 0; si < nSlots; si++) {
           const slotStartMin = slotList[si];
           const currDStr = formatDateOnly(currD);
           const currKey = slotStorageKey(currDStr, slotStartMin);
-
-          if (isLunchCell(currD, slotStartMin)) {
-            delete assignments[currKey];
-            continue;
-          }
-
-          if (prevD < rangeStart || prevD > rangeEnd || isLunchCell(prevD, slotStartMin)) {
-            delete assignments[currKey];
-            continue;
-          }
-
           const prevKey = slotStorageKey(formatDateOnly(prevD), slotStartMin);
+
+          if (!isPrevDayInRange) {
+            lunchExceptionKeys.delete(currKey);
+            delete slotCellOverrides[currKey];
+            delete assignments[currKey];
+            continue;
+          }
+
+          if (lunchExceptionKeys.has(prevKey)) {
+            lunchExceptionKeys.add(currKey);
+          } else {
+            lunchExceptionKeys.delete(currKey);
+          }
+
+          const prevOverride = slotCellOverrides[prevKey];
+          if (prevOverride === SLOT_CELL_MODE_MUL || prevOverride === SLOT_CELL_MODE_EXCLUDED) {
+            slotCellOverrides[currKey] = prevOverride;
+          } else {
+            delete slotCellOverrides[currKey];
+          }
+
+          if (isAssignmentBlocked(currKey)) {
+            delete assignments[currKey];
+            continue;
+          }
+
+          if (isAssignmentBlocked(prevKey)) {
+            delete assignments[currKey];
+            continue;
+          }
+
           const ids = filterToNamedPersonIndices(namesNow, getSlotPersonIndexes(assignments[prevKey]));
           if (ids.length === 0) delete assignments[currKey];
           else assignments[currKey] = { personIndexes: [...ids] };
@@ -1395,6 +1658,14 @@
         elCalendar.textContent = "시작일이 종료일보다 늦을 수 없습니다.";
         renderStats();
         return;
+      }
+
+      if (slotCopyHighlightKey) {
+        const hlIds = filterToNamedPersonIndices(
+          getNames(),
+          getSlotPersonIndexes(assignments[slotCopyHighlightKey])
+        );
+        if (!hlIds.length) slotCopyHighlightKey = null;
       }
 
       const weekStart = startOfMonday(start);
@@ -1478,6 +1749,8 @@
 
         const tbl = document.createElement("table");
         tbl.className = "schedule-table";
+        const slotList = getWorkSlotMinutesList();
+        const nSlots = slotList.length;
 
         const thead = document.createElement("thead");
         const hr = document.createElement("tr");
@@ -1489,21 +1762,62 @@
         for (let di = 0; di < DISPLAY_DAYS_MON_SAT; di++) {
           const dd = new Date(ws);
           dd.setDate(dd.getDate() + di);
+          const dStrHead = formatDateOnly(dd);
           const th = document.createElement("th");
           th.className = "day-col";
           if (di === 5) th.classList.add("day-col-sat");
           const wd = ["월", "화", "수", "목", "금", "토"][di];
-          th.textContent = `${wd} ${dd.getMonth() + 1}/${dd.getDate()}`;
-          if (dd < start || dd > end) th.classList.add("is-out");
+          const isColOut = dd < start || dd > end;
+          if (isColOut) th.classList.add("is-out");
+
+          const headWrap = document.createElement("div");
+          headWrap.className = "day-col-head";
+          if (!isColOut) {
+            const btnFill = document.createElement("button");
+            btnFill.type = "button";
+            btnFill.className = "day-col-action-btn day-col-action-btn--fill";
+            btnFill.textContent = "A";
+            btnFill.setAttribute(
+              "aria-label",
+              "이 날 진료 칸 전체에 선택 인원 적용. Ctrl+클릭으로 복사한 배정 붙여넣기."
+            );
+            btnFill.title =
+              "클릭: 선택한 사람으로 이날 전체 칸 반영. Ctrl+클릭: 복사한 칸 배정을 이날 전체에 붙여넣기.";
+            btnFill.addEventListener("click", (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              applyDayHeaderFillAll(dStrHead, dd, ev.ctrlKey === true);
+            });
+            btnFill.addEventListener("mousedown", (ev) => ev.stopPropagation());
+            headWrap.appendChild(btnFill);
+          }
+          const labelSpan = document.createElement("span");
+          labelSpan.className = "day-col-label";
+          labelSpan.textContent = `${wd} ${dd.getMonth() + 1}/${dd.getDate()}`;
+          headWrap.appendChild(labelSpan);
+          if (!isColOut) {
+            const btnClear = document.createElement("button");
+            btnClear.type = "button";
+            btnClear.className = "day-col-action-btn day-col-action-btn--clear";
+            btnClear.textContent = "×";
+            btnClear.setAttribute("aria-label", "이 날 배정 전체 삭제");
+            btnClear.title = "이 날 전체 배정 지우기";
+            btnClear.addEventListener("click", (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              applyDayHeaderClearAll(dStrHead);
+            });
+            btnClear.addEventListener("mousedown", (ev) => ev.stopPropagation());
+            headWrap.appendChild(btnClear);
+          }
+
+          th.appendChild(headWrap);
           hr.appendChild(th);
         }
         thead.appendChild(hr);
         tbl.appendChild(thead);
 
         const tbody = document.createElement("tbody");
-
-        const slotList = getWorkSlotMinutesList();
-        const nSlots = slotList.length;
 
         /**
          * 같은 주·같은 날짜 열에서 슬롯별 표시 시그니처(배정/오프 보기와 동일 규칙)
@@ -1515,8 +1829,9 @@
             if (dd < start || dd > end) return "";
             if (isLunchCell(dd, slotStartMin)) return "";
             const dStr = formatDateOnly(dd);
-            const names = getNames();
             const key = slotStorageKey(dStr, slotStartMin);
+            if (isSlotExcludedByUser(key)) return "";
+            const names = getNames();
             const indexes = filterToNamedPersonIndices(names, getSlotPersonIndexes(assignments[key]));
             const displayIndexes = isCalendarOffViewMode
               ? indexes.length === 0
@@ -1569,13 +1884,62 @@
         }
 
         /**
+         * 배정 칸(td): data-slot-key·우클릭·드래그 페인트(점심 등 빈 칸과 동일 이벤트)
+         */
+        function attachSlotCellPointerHandlers(host, key) {
+          host.setAttribute("data-slot-key", key);
+          host.addEventListener(
+            "contextmenu",
+            (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              openSlotContextMenu(ev.clientX, ev.clientY, key);
+            },
+            { passive: false }
+          );
+          host.addEventListener("mousedown", (ev) => {
+            if (ev.button !== 0) return;
+            ev.preventDefault();
+            pointerPaint.isDown = true;
+            pointerPaint.isDrag = false;
+            pointerPaint.isEraseDrag = Boolean(ev.altKey);
+            pointerPaint.isPasteDrag =
+              !pointerPaint.isEraseDrag && Boolean(ev.ctrlKey && slotAssignmentClipboard !== null);
+            pointerPaint.startKey = key;
+            pointerPaint.startX = ev.clientX;
+            pointerPaint.startY = ev.clientY;
+          });
+          host.addEventListener("mouseenter", () => {
+            if (!pointerPaint.isDown || !pointerPaint.isDrag) return;
+            if (pointerPaint.isEraseDrag) applyEraseToSlotKey(key);
+            else if (pointerPaint.isPasteDrag) applyPasteToSlotKey(key);
+            else applyPaintToSlotKey(key);
+          });
+          host.addEventListener(
+            "touchstart",
+            (ev) => {
+              if (!ev.touches || ev.touches.length !== 1) return;
+              const t = ev.touches[0];
+              pointerPaint.isDown = true;
+              pointerPaint.isDrag = false;
+              pointerPaint.isEraseDrag = false;
+              pointerPaint.isPasteDrag = false;
+              pointerPaint.startKey = key;
+              pointerPaint.startX = t.clientX;
+              pointerPaint.startY = t.clientY;
+            },
+            { passive: false }
+          );
+        }
+
+        /**
          * td에 배정 UI·이벤트 장착
          * - 오프 보기 시 칩은 미배정 인원(오프) 표시, 배정 인원 수 배지는 유지
          * - 반환값: 현재 표시 기준 시그니처(같은 날짜 위아래 연속 동일 희미 처리용)
          */
         function mountAssignableSlot(host, dStr, dd, slotStartMin) {
-          if (isSlotMulForAssignment(dd, slotStartMin)) host.classList.add("slot-mul-hour");
           const key = slotStorageKey(dStr, slotStartMin);
+          if (isSlotMulEffective(key, dd, slotStartMin)) host.classList.add("slot-mul-hour");
           const names = getNames();
           const indexes = filterToNamedPersonIndices(names, getSlotPersonIndexes(assignments[key]));
           /* 오프 보기: 배정이 없는 칸은 배정 보기와 같이 빈 칸 유지(전원 오프로 채우지 않음) */
@@ -1618,78 +1982,67 @@
           }
 
           if (indexes.length > 0) {
-            const cntEl = document.createElement("div");
-            cntEl.className = "slot-assign-count";
-            cntEl.textContent = String(indexes.length);
-            cntEl.title = `배정 ${indexes.length}명`;
-            inner.appendChild(cntEl);
+            const countHost = document.createElement("div");
+            countHost.className = "slot-assign-count-host";
+            if (slotCopyHighlightKey === key) countHost.classList.add("is-copy-source");
+
+            const numEl = document.createElement("div");
+            numEl.className = "slot-assign-count-num";
+            numEl.textContent = String(indexes.length);
+            numEl.title = `배정 ${indexes.length}명`;
+
+            const countActions = document.createElement("div");
+            countActions.className = "slot-assign-count-actions";
+
+            const btnCountCopy = document.createElement("button");
+            btnCountCopy.type = "button";
+            btnCountCopy.className = "slot-assign-count-action-btn slot-assign-count-action-btn--copy";
+            btnCountCopy.textContent = "복사";
+            btnCountCopy.title = "이 칸 배정 복사";
+            if (slotCopyHighlightKey === key) btnCountCopy.classList.add("is-active");
+            btnCountCopy.addEventListener("click", (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              applySlotCopyFromKey(key);
+              persist();
+              renderCalendar();
+            });
+            btnCountCopy.addEventListener("mousedown", (ev) => ev.stopPropagation());
+
+            const btnCountClear = document.createElement("button");
+            btnCountClear.type = "button";
+            btnCountClear.className = "slot-assign-count-action-btn slot-assign-count-action-btn--clear";
+            btnCountClear.textContent = "X";
+            btnCountClear.title = "이 칸 배정 지우기";
+            btnCountClear.setAttribute("aria-label", "이 칸 배정 지우기");
+            btnCountClear.addEventListener("click", (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              delete assignments[key];
+              if (slotCopyHighlightKey === key) slotCopyHighlightKey = null;
+              persist();
+              renderCalendar();
+              showToast("이 칸 배정을 지웠습니다.");
+            });
+            btnCountClear.addEventListener("mousedown", (ev) => ev.stopPropagation());
+
+            countActions.appendChild(btnCountCopy);
+            countActions.appendChild(btnCountClear);
+            countHost.appendChild(numEl);
+            countHost.appendChild(countActions);
+            inner.appendChild(countHost);
+          }
+
+          if (indexes.length === 0) {
+            inner.appendChild(createSlotModeUi(key));
+            const mainHit = document.createElement("div");
+            mainHit.className = "slot-main-hit";
+            mainHit.setAttribute("aria-hidden", "true");
+            inner.appendChild(mainHit);
           }
 
           host.appendChild(inner);
-          host.setAttribute("data-slot-key", key);
-
-          host.addEventListener(
-            "contextmenu",
-            (ev) => {
-              ev.preventDefault();
-              ev.stopPropagation();
-              openSlotContextMenu(ev.clientX, ev.clientY, key);
-            },
-            { passive: false }
-          );
-          host.addEventListener("mousedown", (ev) => {
-            if (ev.button !== 0) return;
-            if (slotPickMode === "copy" || slotPickMode === "paste") {
-              ev.preventDefault();
-              ev.stopPropagation();
-              if (slotPickMode === "copy") applySlotCopyFromKey(key);
-              else applySlotPasteFromKey(key);
-              clearSlotPickMode();
-              persist();
-              renderCalendar();
-              return;
-            }
-            ev.preventDefault();
-            pointerPaint.isDown = true;
-            pointerPaint.isDrag = false;
-            pointerPaint.isEraseDrag = Boolean(ev.altKey);
-            pointerPaint.isPasteDrag =
-              !pointerPaint.isEraseDrag && Boolean(ev.ctrlKey && slotAssignmentClipboard !== null);
-            pointerPaint.startKey = key;
-            pointerPaint.startX = ev.clientX;
-            pointerPaint.startY = ev.clientY;
-          });
-          host.addEventListener("mouseenter", () => {
-            if (!pointerPaint.isDown || !pointerPaint.isDrag) return;
-            if (pointerPaint.isEraseDrag) applyEraseToSlotKey(key);
-            else if (pointerPaint.isPasteDrag) applyPasteToSlotKey(key);
-            else applyPaintToSlotKey(key);
-          });
-          host.addEventListener(
-            "touchstart",
-            (ev) => {
-              if (slotPickMode === "copy" || slotPickMode === "paste") {
-                if (!ev.touches || ev.touches.length !== 1) return;
-                ev.preventDefault();
-                if (slotPickMode === "copy") applySlotCopyFromKey(key);
-                else applySlotPasteFromKey(key);
-                clearSlotPickMode();
-                persist();
-                renderCalendar();
-                return;
-              }
-              if (!ev.touches || ev.touches.length !== 1) return;
-              const t = ev.touches[0];
-              pointerPaint.isDown = true;
-              pointerPaint.isDrag = false;
-              pointerPaint.isEraseDrag = false;
-              pointerPaint.isPasteDrag = false;
-              pointerPaint.startKey = key;
-              pointerPaint.startX = t.clientX;
-              pointerPaint.startY = t.clientY;
-            },
-            { passive: false }
-          );
+          attachSlotCellPointerHandlers(host, key);
           return displaySignature;
         }
 
@@ -1704,34 +2057,35 @@
             const td = document.createElement("td");
             td.className = "slot-cell" + (isOut ? " is-out" : "");
 
+            const slotKey = slotStorageKey(dStr, slotStartMin);
             const lunchHere = !isOut && isLunchCell(dd, slotStartMin);
             if (lunchHere) td.classList.add("is-lunch");
 
             if (!isOut && lunchHere) {
-              const openKey = slotStorageKey(dStr, slotStartMin);
-              const btnOpen = document.createElement("button");
-              btnOpen.type = "button";
-              btnOpen.className = "lunch-open-slot-btn";
-              btnOpen.textContent = "×";
-              btnOpen.setAttribute("aria-label", "이 칸만 점심 제외(일반 진료 시간)");
-              btnOpen.title = "이 칸만 일반 진료 시간(배정·집계 포함)";
-              btnOpen.addEventListener("click", (ev) => {
-                ev.preventDefault();
-                ev.stopPropagation();
-                try {
-                  lunchExceptionKeys.add(openKey);
-                  persist();
-                  renderCalendar();
-                  showToast("이 칸을 일반 진료 시간으로 표시했습니다.");
-                } catch (e) {
-                  console.error("lunchOpenSlot", e);
-                  showToast("적용 중 오류가 났습니다. 다시 시도해 주세요.");
-                }
-              });
-              btnOpen.addEventListener("mousedown", (ev) => {
-                ev.stopPropagation();
-              });
-              td.appendChild(btnOpen);
+              const innerLu = document.createElement("div");
+              innerLu.className = "slot-inner slot-inner--mode-only";
+              innerLu.appendChild(createSlotModeUi(slotKey));
+              const mainHitLu = document.createElement("div");
+              mainHitLu.className = "slot-main-hit";
+              mainHitLu.setAttribute("aria-hidden", "true");
+              innerLu.appendChild(mainHitLu);
+              td.appendChild(innerLu);
+              attachSlotCellPointerHandlers(td, slotKey);
+              prevSignatureByDayIndex[di] = "";
+              trEl.appendChild(td);
+              continue;
+            }
+
+            if (!isOut && !lunchHere && isSlotExcludedByUser(slotKey)) {
+              td.classList.add("is-excluded-slot");
+              const innerEx = document.createElement("div");
+              innerEx.className = "slot-inner slot-inner--mode-only";
+              innerEx.appendChild(createSlotModeUi(slotKey));
+              const mainHitEx = document.createElement("div");
+              mainHitEx.className = "slot-main-hit";
+              mainHitEx.setAttribute("aria-hidden", "true");
+              innerEx.appendChild(mainHitEx);
+              td.appendChild(innerEx);
               prevSignatureByDayIndex[di] = "";
               trEl.appendChild(td);
               continue;
@@ -1774,7 +2128,8 @@
             const anchorWeekday = new Date(weekStart);
             if (isLunchSlotOverlap(anchorWeekday, slotStartMin, startMin, endMin)) {
               tTime.classList.add("time-col--lunch");
-              tTime.title = "클릭하면 이 시간 줄의 점심 예외(×로 연 칸)를 전부 점심시간으로 복구합니다.";
+              tTime.title =
+                "클릭하면 이 시간 줄에서 도구줄로 연 점심 예외 칸을 전부 점심시간으로 복구합니다.";
               tTime.addEventListener("click", () => restoreLunchRowAcrossRange(slotStartMin));
             }
           } catch (e) {
@@ -1827,11 +2182,12 @@
         if (slotStartMin == null) return;
         if (!workSlotSet.has(slotStartMin)) return;
         if (isLunchCell(d, slotStartMin)) return;
+        if (isSlotExcludedByUser(key)) return;
 
         const ids = filterToNamedPersonIndices(names, getSlotPersonIndexes(assignments[key]));
         if (!ids.length) return;
 
-        const h = effectiveHours(isSlotMulForAssignment(d, slotStartMin));
+        const h = effectiveHours(isSlotMulEffective(key, d, slotStartMin));
         const wk = weekKeyFromDate(d);
         const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
         ids.forEach((pid) => {
@@ -1844,7 +2200,7 @@
       tbl.className = "stats-table";
       const head = document.createElement("thead");
       const hr = document.createElement("tr");
-      ["이름", "평균 주간 근무(시간)", "월별 근무(시간)"].forEach((t) => {
+      ["이름", "평균 주간 근무(시간)", "기간 전체(시간)", "월별 근무(시간)"].forEach((t) => {
         const th = document.createElement("th");
         th.textContent = t;
         hr.appendChild(th);
@@ -1876,15 +2232,21 @@
         sub.textContent = parts.join(" · ");
         tdMo.appendChild(sub);
 
+        const tdPeriod = document.createElement("td");
+        const periodTotal = monthKeys.reduce((s, mk) => s + perPersonMonthTotals[i][mk], 0);
+        tdPeriod.textContent = periodTotal.toFixed(2);
+        tdPeriod.className = "stats-period-total";
+
         tr.appendChild(tdN);
         tr.appendChild(tdAvg);
+        tr.appendChild(tdPeriod);
         tr.appendChild(tdMo);
         tb.appendChild(tr);
       }
       if (namedRowCount === 0) {
         const tr = document.createElement("tr");
         const td = document.createElement("td");
-        td.colSpan = 3;
+        td.colSpan = 4;
         td.className = "stats-empty-hint";
         td.textContent = "이름이 입력된 사람이 있을 때만 집계 행이 표시됩니다.";
         tr.appendChild(td);
@@ -1921,42 +2283,6 @@
         renderPersonPicker();
         renderCalendar();
       });
-    });
-
-    /** 시간표 칸 복사·붙여넣기: 버튼으로 모드 선택 후 칸 클릭 */
-    document.getElementById("btnSlotCopyMode")?.addEventListener("click", () => {
-      try {
-        if (slotPickMode === "copy") {
-          clearSlotPickMode();
-          showToast("복사 모드를 취소했습니다.");
-          return;
-        }
-        slotPickMode = "copy";
-        updateSlotPickModeButtons();
-        showToast("복사할 칸을 클릭하세요.");
-      } catch (e) {
-        console.error("btnSlotCopyMode", e);
-        showToast("동작을 시작할 수 없습니다.");
-      }
-    });
-    document.getElementById("btnSlotPasteMode")?.addEventListener("click", () => {
-      try {
-        if (slotPickMode === "paste") {
-          clearSlotPickMode();
-          showToast("붙여넣기 모드를 취소했습니다.");
-          return;
-        }
-        if (slotAssignmentClipboard === null) {
-          showToast("복사한 배정이 없습니다. 먼저 복사하기로 칸을 복사하세요.");
-          return;
-        }
-        slotPickMode = "paste";
-        updateSlotPickModeButtons();
-        showToast("붙여넣을 칸을 클릭하세요.");
-      } catch (e) {
-        console.error("btnSlotPasteMode", e);
-        showToast("동작을 시작할 수 없습니다.");
-      }
     });
 
     const BTN_CALENDAR_LABEL_TO_OFF = "눌러서 오프로 보기";
