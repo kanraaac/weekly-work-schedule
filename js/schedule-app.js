@@ -7,7 +7,7 @@
   "use strict";
 
   /** UI·배포 확인용(수정 배포 시 0.01씩 증가) */
-  const APP_VERSION = "1.24";
+  const APP_VERSION = "1.25";
 
   /** 빈 칸 호버로 지정: 1.5배 강제·배정 제외(점심과 별개) */
   const SLOT_CELL_MODE_MUL = "mul";
@@ -139,12 +139,12 @@
   }
 
   /**
-   * 1.5배 적용 여부: 토요일(항상), 월~금은 [weekdayStartMin, weekdayEndMin) 반개구간
+   * 1.5배 적용 여부: 월~금은 [weekdayStartMin, weekdayEndMin) 반개구간
+   * - 토요일은 "기본 셀 형식"에서 1.5배로 다루므로, 계산 로직에서는 자동 1.5배를 적용하지 않음
    * weekdayStartMin >= weekdayEndMin 이면 평일은 구간 없음
    */
   function isSlotMulFifteenForDate(dateObj, slotStartMin, weekdayStartMin, weekdayEndMin) {
     const dow = dateObj.getDay();
-    if (dow === 6) return true;
     if (dow >= 1 && dow <= 5) {
       if (weekdayStartMin >= weekdayEndMin) return false;
       return slotStartMin >= weekdayStartMin && slotStartMin < weekdayEndMin;
@@ -422,13 +422,13 @@
     const elPicker = document.getElementById("personPicker");
 
     let assignments = {};
-    /** 월~금 점심 구간과 겹치더라도 일반 진료 칸으로 둘 `YYYY-MM-DD|slotStartMin` 키 집합 */
-    let lunchExceptionKeys = new Set();
     /** 칸별 `날짜|슬롯분` → `mul` | `excluded` (없으면 글로벌 규칙과 동일한 일반 진료) */
     let slotCellOverrides = {};
     let selectedPersonIndex = 0;
     /** 우클릭 메뉴에서 복사한 personIndex 목록(null이면 복사 이력 없음) */
     let slotAssignmentClipboard = null;
+    /** `<>` 도구줄에서 복사한 셀 형식(진료/1.5배/제외) — 배정 복사와 별개 */
+    let slotCellFormatClipboard = null;
     /** 배정 칸 [복사]로 지정한 원본 슬롯 키(셀에 복사 중 표시·다른 사람 선택 시 해제) */
     let slotCopyHighlightKey = null;
     /** 빈 칸·제외 칸 `<>` 클릭 시 열리는 [진료][1.5배][제외] 패널의 슬롯 키 */
@@ -479,93 +479,68 @@
     }
 
     /**
-     * 점심(배정 불가) 칸 여부: 글로벌 점심 구간과 겹치고, 해당 칸이 개별 예외가 아닐 때만 true
+     * 기본 셀 형식(진료/1.5배/제외)을 시간 설정으로부터 계산
+     * - 점심 구간(월~금): 기본 제외
+     * - 평일 1.5배 구간(월~금): 기본 1.5배
+     * - 토요일: 기본 1.5배 (예전에는 계산 로직에서 강제였던 것을 "셀 형식"으로 통일)
      */
-    function isLunchCell(d, slotStartMin) {
-      const { startMin, endMin } = getLunchMinutesBounds();
-      if (!isLunchSlotOverlap(d, slotStartMin, startMin, endMin)) return false;
-      const key = slotStorageKey(formatDateOnly(d), slotStartMin);
-      if (lunchExceptionKeys.has(key)) return false;
-      return true;
+    function getDefaultSlotCellMode(d, slotStartMin) {
+      try {
+        const { startMin: lunchStartMin, endMin: lunchEndMin } = getLunchMinutesBounds();
+        if (isLunchSlotOverlap(d, slotStartMin, lunchStartMin, lunchEndMin)) return SLOT_CELL_MODE_EXCLUDED;
+        if (d.getDay() === 6) return SLOT_CELL_MODE_MUL;
+        return isSlotMulForAssignment(d, slotStartMin) ? SLOT_CELL_MODE_MUL : "normal";
+      } catch (e) {
+        console.error("getDefaultSlotCellMode", e);
+        return "normal";
+      }
     }
 
     /**
-     * 점심 구간 밖·주말 등으로 더 이상 점심이 아닌 예외 키는 저장 전에 제거
+     * 셀 형식 최종값(override 우선): slotCellOverrides[key]가 있으면 그 값을, 없으면 기본값을 사용
+     * - override에는 "normal"|"mul"|"excluded" 모두 들어갈 수 있음
      */
-    function pruneStaleLunchExceptions() {
-      const { startMin, endMin } = getLunchMinutesBounds();
-      const next = new Set();
-      try {
-        lunchExceptionKeys.forEach((key) => {
-          const dStr = key.split("|")[0];
-          const slotStartMin = slotStartMinFromKey(key);
-          if (slotStartMin == null) return;
-          const d = parseDateOnly(dStr);
-          if (Number.isNaN(d.getTime())) return;
-          if (isLunchSlotOverlap(d, slotStartMin, startMin, endMin)) next.add(key);
-        });
-      } catch (e) {
-        console.error("pruneStaleLunchExceptions", e);
-      }
-      lunchExceptionKeys = next;
+    function getSlotCellModeEffective(key, d, slotStartMin) {
+      const v = slotCellOverrides[key];
+      if (v === SLOT_CELL_MODE_MUL || v === SLOT_CELL_MODE_EXCLUDED || v === "normal") return v;
+      return getDefaultSlotCellMode(d, slotStartMin);
     }
 
-    /** 저장 전 월~금 점심 구간과 겹치는 배정 제거 */
-    function pruneLunchAssignments() {
-      Object.keys(assignments).forEach((k) => {
-        const dStr = k.split("|")[0];
-        const slotStartMin = slotStartMinFromKey(k);
-        if (slotStartMin == null) return;
-        const d = parseDateOnly(dStr);
-        if (isLunchCell(d, slotStartMin)) delete assignments[k];
-      });
-    }
-
-    function isSlotExcludedByUser(key) {
-      return slotCellOverrides[key] === SLOT_CELL_MODE_EXCLUDED;
-    }
-
-    /** 점심 또는 사용자「제외」칸이면 배정·붙여넣기 등 불가 */
     function isAssignmentBlocked(key) {
       if (!key) return true;
-      if (isSlotExcludedByUser(key)) return true;
       const dStr = key.split("|")[0];
       const slotStartMin = slotStartMinFromKey(key);
       if (slotStartMin == null) return true;
       const d = parseDateOnly(dStr);
       if (Number.isNaN(d.getTime())) return true;
-      return isLunchCell(d, slotStartMin);
+      return getSlotCellModeEffective(key, d, slotStartMin) === SLOT_CELL_MODE_EXCLUDED;
     }
 
-    /** 표시·집계용 1.5배 여부(사용자「1.5배」지정 시 평일 창과 무관하게 true) */
+    /** 표시·집계용 1.5배 여부: 최종 셀 형식이 mul일 때만 true */
     function isSlotMulEffective(key, d, slotStartMin) {
-      if (slotCellOverrides[key] === SLOT_CELL_MODE_MUL) return true;
-      if (slotCellOverrides[key] === SLOT_CELL_MODE_EXCLUDED) return false;
-      return isSlotMulForAssignment(d, slotStartMin);
+      return getSlotCellModeEffective(key, d, slotStartMin) === SLOT_CELL_MODE_MUL;
+    }
+
+    function isSlotExcludedEffective(key, d, slotStartMin) {
+      return getSlotCellModeEffective(key, d, slotStartMin) === SLOT_CELL_MODE_EXCLUDED;
     }
 
     function getSlotCellModeForUi(key) {
-      if (slotCellOverrides[key] === SLOT_CELL_MODE_EXCLUDED) return SLOT_CELL_MODE_EXCLUDED;
-      if (slotCellOverrides[key] === SLOT_CELL_MODE_MUL) return SLOT_CELL_MODE_MUL;
-      return "normal";
-    }
-
-    /**
-     * `<>` 도구줄에서 강조할 모드: 글로벌 점심 칸(아직 예외 없음)은 어느 버튼도 활성 표시 안 함
-     */
-    function getSlotCellToolbarActiveMode(key) {
       try {
         const dStr = key.split("|")[0];
         const slotStartMin = slotStartMinFromKey(key);
-        if (slotStartMin == null) return getSlotCellModeForUi(key);
+        if (slotStartMin == null) return "normal";
         const d = parseDateOnly(dStr);
-        if (Number.isNaN(d.getTime())) return getSlotCellModeForUi(key);
-        if (isLunchCell(d, slotStartMin)) return null;
-        return getSlotCellModeForUi(key);
+        if (Number.isNaN(d.getTime())) return "normal";
+        return getSlotCellModeEffective(key, d, slotStartMin);
       } catch (e) {
-        console.error("getSlotCellToolbarActiveMode", e);
-        return getSlotCellModeForUi(key);
+        console.error("getSlotCellModeForUi", e);
+        return "normal";
       }
+    }
+
+    function getSlotCellToolbarActiveMode(key) {
+      return getSlotCellModeForUi(key);
     }
 
     /**
@@ -573,37 +548,84 @@
      */
     function applySlotCellModeFromToolbar(key, mode) {
       try {
-        slotModePanelOpenKey = null;
-        const dStr = key.split("|")[0];
-        const slotStartMin = slotStartMinFromKey(key);
-        const d = slotStartMin != null ? parseDateOnly(dStr) : new Date(NaN);
-        const isLunchBlock =
-          slotStartMin != null && !Number.isNaN(d.getTime()) && isLunchCell(d, slotStartMin);
-        if (isLunchBlock) lunchExceptionKeys.add(key);
-
-        if (mode === "normal") {
-          delete slotCellOverrides[key];
-          showToast("이 칸을 일반 진료 시간으로 설정했습니다.");
-        } else if (mode === SLOT_CELL_MODE_MUL) {
-          slotCellOverrides[key] = SLOT_CELL_MODE_MUL;
-          showToast("이 칸을 1.5배 적용 시간으로 설정했습니다.");
-        } else if (mode === SLOT_CELL_MODE_EXCLUDED) {
-          slotCellOverrides[key] = SLOT_CELL_MODE_EXCLUDED;
-          delete assignments[key];
-          showToast("이 칸을 배정 제외 시간으로 설정했습니다.");
-        }
-        persist();
-        renderCalendar();
+        applySlotCellModeInternal(key, mode, { isSilent: false, canRerender: true, canClearAssignments: true });
       } catch (e) {
         console.error("applySlotCellModeFromToolbar", e);
         showToast("설정 적용 중 오류가 났습니다. 다시 시도해 주세요.");
       }
     }
 
+    /** 셀 형식 붙여넣기 전용: 토스트 없이 상태만 반영(배정은 유지) */
+    function applySlotCellModeFromPaste(key, mode) {
+      try {
+        applySlotCellModeInternal(key, mode, { isSilent: true, canRerender: false, canClearAssignments: false });
+      } catch (e) {
+        console.error("applySlotCellModeFromPaste", e);
+      }
+    }
+
+    /**
+     * 셀 형식 반영(공통): 점심 칸이면 예외로 풀고, override(mul/제외)를 설정
+     * - canClearAssignments=false이면 '제외'로 바꿔도 기존 배정은 유지(형식만 붙여넣기 규칙)
+     */
+    function applySlotCellModeInternal(key, mode, opts) {
+      try {
+        slotModePanelOpenKey = null;
+        const dStr = key.split("|")[0];
+        const slotStartMin = slotStartMinFromKey(key);
+        const d = slotStartMin != null ? parseDateOnly(dStr) : new Date(NaN);
+        const defaultMode =
+          slotStartMin != null && !Number.isNaN(d.getTime()) ? getDefaultSlotCellMode(d, slotStartMin) : "normal";
+
+        if (mode === "normal") {
+          if (defaultMode === "normal") delete slotCellOverrides[key];
+          else slotCellOverrides[key] = "normal";
+          if (!opts.isSilent) showToast("이 칸을 일반 진료 시간으로 설정했습니다.");
+        } else if (mode === SLOT_CELL_MODE_MUL) {
+          if (defaultMode === SLOT_CELL_MODE_MUL) delete slotCellOverrides[key];
+          else slotCellOverrides[key] = SLOT_CELL_MODE_MUL;
+          if (!opts.isSilent) showToast("이 칸을 1.5배 적용 시간으로 설정했습니다.");
+        } else if (mode === SLOT_CELL_MODE_EXCLUDED) {
+          if (defaultMode === SLOT_CELL_MODE_EXCLUDED) delete slotCellOverrides[key];
+          else slotCellOverrides[key] = SLOT_CELL_MODE_EXCLUDED;
+          if (opts.canClearAssignments) delete assignments[key];
+          if (!opts.isSilent) showToast("이 칸을 배정 제외 시간으로 설정했습니다.");
+        }
+
+        if (opts.canRerender) {
+          persist();
+          renderCalendar();
+        }
+      } catch (e) {
+        console.error("applySlotCellModeInternal", e);
+        if (!opts.isSilent) showToast("설정 적용 중 오류가 났습니다. 다시 시도해 주세요.");
+      }
+    }
+
+    /** 셀 형식 라벨(클립보드 텍스트) */
+    function slotCellModeLabel(mode) {
+      if (mode === SLOT_CELL_MODE_MUL) return "1.5배";
+      if (mode === SLOT_CELL_MODE_EXCLUDED) return "제외";
+      return "진료";
+    }
+
+    /** 셀 형식(진료/1.5배/제외) 복사: 앱 내부 + 시스템 클립보드(가능한 경우) */
+    function copySlotCellFormat(mode) {
+      const text = slotCellModeLabel(mode);
+      slotCellFormatClipboard = mode;
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+          navigator.clipboard.writeText(text).catch((e) => console.error("navigator.clipboard.writeText", e));
+        }
+      } catch (e) {
+        console.error("copySlotCellFormat", e);
+      }
+      showToast(`형식(${text})을 복사했습니다.`);
+    }
+
     function pruneExcludedSlotAssignments() {
-      Object.keys(assignments).forEach((k) => {
-        if (isSlotExcludedByUser(k)) delete assignments[k];
-      });
+      /* 형식만 붙여넣기 시 기존 배정을 유지하기 위해, 제외 칸 자동 삭제는 하지 않음 */
+      return;
     }
 
     /**
@@ -637,6 +659,7 @@
         { mode: "normal", label: "진료", title: "글로벌 설정과 동일한 일반 진료 칸" },
         { mode: SLOT_CELL_MODE_MUL, label: "1.5배", title: "이 칸만 1.5배 집계" },
         { mode: SLOT_CELL_MODE_EXCLUDED, label: "제외", title: "배정 불가·근무 집계에서 제외" },
+        { mode: "copy_format", label: "복사", title: "현재 칸의 형식(진료/1.5배/제외)만 복사" },
       ];
       specs.forEach((spec) => {
         const btn = document.createElement("button");
@@ -644,10 +667,17 @@
         btn.className = "slot-mode-btn";
         btn.textContent = spec.label;
         btn.title = spec.title;
-        if (activeMode !== null && spec.mode === activeMode) btn.classList.add("is-active");
+        if (spec.mode !== "copy_format" && activeMode !== null && spec.mode === activeMode) btn.classList.add("is-active");
         btn.addEventListener("click", (ev) => {
           ev.preventDefault();
           ev.stopPropagation();
+          if (spec.mode === "copy_format") {
+            const m = getSlotCellModeForUi(key);
+            copySlotCellFormat(m === "normal" ? "normal" : m);
+            slotModePanelOpenKey = null;
+            renderCalendar();
+            return;
+          }
           applySlotCellModeFromToolbar(key, spec.mode);
         });
         btn.addEventListener("mousedown", (ev) => ev.stopPropagation());
@@ -753,17 +783,18 @@
         });
         assignments = migrateAssignmentsToMinuteKeys(tmp);
       }
-      lunchExceptionKeys = new Set();
-      if (Array.isArray(restored.lunchExceptions)) {
-        restored.lunchExceptions.forEach((k) => {
-          if (typeof k === "string" && k.indexOf("|") > 0) lunchExceptionKeys.add(k);
-        });
-      }
       slotCellOverrides = {};
       if (restored.slotCellOverrides && typeof restored.slotCellOverrides === "object") {
         Object.keys(restored.slotCellOverrides).forEach((k) => {
           const v = restored.slotCellOverrides[k];
-          if (v === SLOT_CELL_MODE_MUL || v === SLOT_CELL_MODE_EXCLUDED) slotCellOverrides[k] = v;
+          if (v === SLOT_CELL_MODE_MUL || v === SLOT_CELL_MODE_EXCLUDED || v === "normal") slotCellOverrides[k] = v;
+        });
+      }
+      /* 구버전 lunchExceptions(점심 예외=진료 취급)을 현재 override("normal")로 마이그레이션 */
+      if (Array.isArray(restored.lunchExceptions)) {
+        restored.lunchExceptions.forEach((k) => {
+          if (typeof k !== "string" || k.indexOf("|") <= 0) return;
+          if (slotCellOverrides[k] == null) slotCellOverrides[k] = "normal";
         });
       }
       if (typeof restored.weekdayMulStart === "string" && restored.weekdayMulStart.trim() && elWeekdayMulStart) {
@@ -1089,11 +1120,25 @@
       assignments = next;
     }
 
+    /** 저장 직전: 제외 셀(기본/override 포함)에는 배정을 두지 않음 */
+    function pruneExcludedModeAssignments() {
+      try {
+        Object.keys(assignments).forEach((k) => {
+          const dStr = k.split("|")[0];
+          const slotStartMin = slotStartMinFromKey(k);
+          if (slotStartMin == null) return;
+          const d = parseDateOnly(dStr);
+          if (Number.isNaN(d.getTime())) return;
+          if (isSlotExcludedEffective(k, d, slotStartMin)) delete assignments[k];
+        });
+      } catch (e) {
+        console.error("pruneExcludedModeAssignments", e);
+      }
+    }
+
     /** persist */
     function persist() {
-      pruneLunchAssignments();
-      pruneExcludedSlotAssignments();
-      pruneStaleLunchExceptions();
+      pruneExcludedModeAssignments();
       stripAssignmentExtras();
       saveState({
         rangeStart: elStart.value,
@@ -1106,7 +1151,7 @@
         lunchEnd: elLunchEnd ? elLunchEnd.value : "",
         workStart: elWorkStart ? elWorkStart.value : "",
         workEnd: elWorkEnd ? elWorkEnd.value : "",
-        lunchExceptions: [...lunchExceptionKeys],
+        lunchExceptions: [],
         slotCellOverrides: JSON.parse(JSON.stringify(slotCellOverrides)),
         selectedPersonIndex,
       });
@@ -1114,9 +1159,7 @@
 
     /** 내보낼 JSON 스냅샷 객체 생성 */
     function buildExportPayload() {
-      pruneLunchAssignments();
-      pruneExcludedSlotAssignments();
-      pruneStaleLunchExceptions();
+      pruneExcludedModeAssignments();
       stripAssignmentExtras();
       return {
         version: EXPORT_FILE_VERSION,
@@ -1131,7 +1174,7 @@
         lunchEnd: elLunchEnd ? elLunchEnd.value : "",
         workStart: elWorkStart ? elWorkStart.value : "",
         workEnd: elWorkEnd ? elWorkEnd.value : "",
-        lunchExceptions: [...lunchExceptionKeys],
+        lunchExceptions: [],
         slotCellOverrides: JSON.parse(JSON.stringify(slotCellOverrides)),
         selectedPersonIndex,
       };
@@ -1158,17 +1201,18 @@
         });
         assignments = migrateAssignmentsToMinuteKeys(tmp);
       }
-      lunchExceptionKeys = new Set();
-      if (Array.isArray(raw.lunchExceptions)) {
-        raw.lunchExceptions.forEach((k) => {
-          if (typeof k === "string" && k.indexOf("|") > 0) lunchExceptionKeys.add(k);
-        });
-      }
       slotCellOverrides = {};
       if (raw.slotCellOverrides && typeof raw.slotCellOverrides === "object") {
         Object.keys(raw.slotCellOverrides).forEach((k) => {
           const v = raw.slotCellOverrides[k];
-          if (v === SLOT_CELL_MODE_MUL || v === SLOT_CELL_MODE_EXCLUDED) slotCellOverrides[k] = v;
+          if (v === SLOT_CELL_MODE_MUL || v === SLOT_CELL_MODE_EXCLUDED || v === "normal") slotCellOverrides[k] = v;
+        });
+      }
+      /* 구버전 lunchExceptions(점심 예외=진료 취급)을 현재 override("normal")로 마이그레이션 */
+      if (Array.isArray(raw.lunchExceptions)) {
+        raw.lunchExceptions.forEach((k) => {
+          if (typeof k !== "string" || k.indexOf("|") <= 0) return;
+          if (slotCellOverrides[k] == null) slotCellOverrides[k] = "normal";
         });
       }
       if (elWorkStart) {
@@ -1348,12 +1392,18 @@
 
     /** Ctrl+드래그 붙여넣기: 복사해 둔 배정으로 칸 전체를 덮어씀 */
     function applyPasteToSlotKey(key) {
-      if (!key || isAssignmentBlocked(key)) return;
-      if (slotAssignmentClipboard === null) return;
-      const namesNow = getNames();
-      const ids = filterToNamedPersonIndices(namesNow, [...slotAssignmentClipboard]);
-      if (ids.length === 0) delete assignments[key];
-      else assignments[key] = { personIndexes: ids };
+      if (!key) return;
+      if (slotAssignmentClipboard !== null) {
+        if (isAssignmentBlocked(key)) return;
+        const namesNow = getNames();
+        const ids = filterToNamedPersonIndices(namesNow, [...slotAssignmentClipboard]);
+        if (ids.length === 0) delete assignments[key];
+        else assignments[key] = { personIndexes: ids };
+        return;
+      }
+      if (slotCellFormatClipboard !== null) {
+        applySlotCellModeFromPaste(key, slotCellFormatClipboard);
+      }
     }
 
     /**
@@ -1371,9 +1421,8 @@
       try {
         for (let si = 0; si < slotList.length; si++) {
           const slotStartMin = slotList[si];
-          if (isLunchCell(dd, slotStartMin)) continue;
           const colKey = slotStorageKey(dStr, slotStartMin);
-          if (isSlotExcludedByUser(colKey)) continue;
+          if (isSlotExcludedEffective(colKey, dd, slotStartMin)) continue;
           keys.push(colKey);
         }
       } catch (e) {
@@ -1580,7 +1629,7 @@
     }
 
     /**
-     * 직전 주와 같은 요일·슬롯에 대해 배정·점심 예외·칸 특성(mul/제외)을 복사
+     * 직전 주와 같은 요일·슬롯에 대해 배정·칸 특성(진료/1.5배/제외)을 복사
      * 이전 주 날짜가 기간 밖이면 해당 열은 배정·특성을 비움(기존 배정 복사 규칙과 동일)
      */
     function applyAssignmentsCopyFromPreviousWeek(prevWeekMonday, currWeekMonday, rangeStart, rangeEnd) {
@@ -1604,20 +1653,13 @@
           const prevKey = slotStorageKey(formatDateOnly(prevD), slotStartMin);
 
           if (!isPrevDayInRange) {
-            lunchExceptionKeys.delete(currKey);
             delete slotCellOverrides[currKey];
             delete assignments[currKey];
             continue;
           }
 
-          if (lunchExceptionKeys.has(prevKey)) {
-            lunchExceptionKeys.add(currKey);
-          } else {
-            lunchExceptionKeys.delete(currKey);
-          }
-
           const prevOverride = slotCellOverrides[prevKey];
-          if (prevOverride === SLOT_CELL_MODE_MUL || prevOverride === SLOT_CELL_MODE_EXCLUDED) {
+          if (prevOverride === SLOT_CELL_MODE_MUL || prevOverride === SLOT_CELL_MODE_EXCLUDED || prevOverride === "normal") {
             slotCellOverrides[currKey] = prevOverride;
           } else {
             delete slotCellOverrides[currKey];
@@ -1673,9 +1715,9 @@
       const weekEnd = startOfMonday(end);
 
       /**
-       * 특정 시간 행(slotStartMin)의 점심 예외를 전부 제거해 점심시간으로 복구
-       * - 월~금에서 점심 구간과 실제로 겹치는 날짜 칸만 대상으로 함
-       * - 예외가 제거되면 해당 칸은 점심(배정 불가)로 처리되며, 기존 배정은 함께 삭제
+       * 특정 시간 행(slotStartMin)의 셀 형식을 기본값으로 복구(시간 설정에 따른 default)
+       * - 점심 구간과 겹치는 시간 행은 기본이 '제외'이므로, 해당 행에서 사용자가 바꾼 형식 override를 전부 제거
+       * - 제외로 복구되는 칸은 배정도 함께 삭제
        */
       function restoreLunchRowAcrossRange(slotStartMin) {
         const { startMin, endMin } = getLunchMinutesBounds();
@@ -1687,8 +1729,8 @@
             if (dow >= 1 && dow <= 5) {
               if (isLunchSlotOverlap(cur, slotStartMin, startMin, endMin)) {
                 const key = slotStorageKey(formatDateOnly(cur), slotStartMin);
-                if (lunchExceptionKeys.has(key)) {
-                  lunchExceptionKeys.delete(key);
+                if (slotCellOverrides[key] != null) {
+                  delete slotCellOverrides[key];
                   removedCount += 1;
                 }
                 if (assignments[key]) delete assignments[key];
@@ -1703,7 +1745,7 @@
         }
         persist();
         renderCalendar();
-        showToast(removedCount ? "해당 시간 줄을 점심시간으로 복구했습니다." : "복구할 점심 예외가 없습니다.");
+        showToast(removedCount ? "해당 시간 줄의 셀 형식을 기본값으로 복구했습니다." : "복구할 셀 형식 변경이 없습니다.");
       }
 
       let displayedWeekIndex = 0;
@@ -1828,10 +1870,9 @@
             const dd = new Date(ws);
             dd.setDate(dd.getDate() + di);
             if (dd < start || dd > end) return "";
-            if (isLunchCell(dd, slotStartMin)) return "";
             const dStr = formatDateOnly(dd);
             const key = slotStorageKey(dStr, slotStartMin);
-            if (isSlotExcludedByUser(key)) return "";
+            if (isSlotExcludedEffective(key, dd, slotStartMin)) return "";
             const names = getNames();
             const indexes = filterToNamedPersonIndices(names, getSlotPersonIndexes(assignments[key]));
             const displayIndexes = isCalendarOffViewMode
@@ -1905,7 +1946,8 @@
             pointerPaint.isDrag = false;
             pointerPaint.isEraseDrag = Boolean(ev.altKey);
             pointerPaint.isPasteDrag =
-              !pointerPaint.isEraseDrag && Boolean(ev.ctrlKey && slotAssignmentClipboard !== null);
+              !pointerPaint.isEraseDrag &&
+              Boolean(ev.ctrlKey && (slotAssignmentClipboard !== null || slotCellFormatClipboard !== null));
             pointerPaint.startKey = key;
             pointerPaint.startX = ev.clientX;
             pointerPaint.startY = ev.clientY;
@@ -2059,25 +2101,8 @@
             td.className = "slot-cell" + (isOut ? " is-out" : "");
 
             const slotKey = slotStorageKey(dStr, slotStartMin);
-            const lunchHere = !isOut && isLunchCell(dd, slotStartMin);
-            if (lunchHere) td.classList.add("is-lunch");
-
-            if (!isOut && lunchHere) {
-              const innerLu = document.createElement("div");
-              innerLu.className = "slot-inner slot-inner--mode-only";
-              innerLu.appendChild(createSlotModeUi(slotKey));
-              const mainHitLu = document.createElement("div");
-              mainHitLu.className = "slot-main-hit";
-              mainHitLu.setAttribute("aria-hidden", "true");
-              innerLu.appendChild(mainHitLu);
-              td.appendChild(innerLu);
-              attachSlotCellPointerHandlers(td, slotKey);
-              prevSignatureByDayIndex[di] = "";
-              trEl.appendChild(td);
-              continue;
-            }
-
-            if (!isOut && !lunchHere && isSlotExcludedByUser(slotKey)) {
+            const modeNow = !isOut ? getSlotCellModeEffective(slotKey, dd, slotStartMin) : "normal";
+            if (!isOut && modeNow === SLOT_CELL_MODE_EXCLUDED) {
               td.classList.add("is-excluded-slot");
               const innerEx = document.createElement("div");
               innerEx.className = "slot-inner slot-inner--mode-only";
@@ -2087,6 +2112,8 @@
               mainHitEx.setAttribute("aria-hidden", "true");
               innerEx.appendChild(mainHitEx);
               td.appendChild(innerEx);
+              /* 제외 칸도 Ctrl+클릭/드래그(형식 붙여넣기) 등이 동작해야 하므로 동일 핸들러 부착 */
+              attachSlotCellPointerHandlers(td, slotKey);
               prevSignatureByDayIndex[di] = "";
               trEl.appendChild(td);
               continue;
@@ -2201,8 +2228,7 @@
         if (d.getDay() === 0) return;
         if (slotStartMin == null) return;
         if (!workSlotSet.has(slotStartMin)) return;
-        if (isLunchCell(d, slotStartMin)) return;
-        if (isSlotExcludedByUser(key)) return;
+        if (isSlotExcludedEffective(key, d, slotStartMin)) return;
 
         const ids = filterToNamedPersonIndices(names, getSlotPersonIndexes(assignments[key]));
         if (!ids.length) return;
@@ -2413,7 +2439,6 @@
         hideSlotContextMenu();
         hidePersonNameContextMenu();
         assignments = {};
-        lunchExceptionKeys = new Set();
         slotCellOverrides = {};
         slotAssignmentClipboard = null;
         slotCopyHighlightKey = null;
