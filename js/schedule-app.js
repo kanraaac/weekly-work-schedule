@@ -7,7 +7,7 @@
   "use strict";
 
   /** UI·배포 확인용(수정 배포 시 0.01씩 증가) */
-  const APP_VERSION = "1.25";
+  const APP_VERSION = "1.26";
 
   /** 빈 칸 호버로 지정: 1.5배 강제·배정 제외(점심과 별개) */
   const SLOT_CELL_MODE_MUL = "mul";
@@ -429,6 +429,12 @@
     let slotAssignmentClipboard = null;
     /** `<>` 도구줄에서 복사한 셀 형식(진료/1.5배/제외) — 배정 복사와 별개 */
     let slotCellFormatClipboard = null;
+    /**
+     * 가장 최근에 복사한 대상(배정 vs 셀 형식)
+     * - type: "assignment" | "format"
+     * - 배정/형식 클립보드가 모두 남아있더라도, 붙여넣기는 마지막 복사만 따른다
+     */
+    let slotClipboardLastType = null;
     /** 배정 칸 [복사]로 지정한 원본 슬롯 키(셀에 복사 중 표시·다른 사람 선택 시 해제) */
     let slotCopyHighlightKey = null;
     /** 빈 칸·제외 칸 `<>` 클릭 시 열리는 [진료][1.5배][제외] 패널의 슬롯 키 */
@@ -613,6 +619,7 @@
     function copySlotCellFormat(mode) {
       const text = slotCellModeLabel(mode);
       slotCellFormatClipboard = mode;
+      slotClipboardLastType = "format";
       try {
         if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
           navigator.clipboard.writeText(text).catch((e) => console.error("navigator.clipboard.writeText", e));
@@ -1393,7 +1400,7 @@
     /** Ctrl+드래그 붙여넣기: 복사해 둔 배정으로 칸 전체를 덮어씀 */
     function applyPasteToSlotKey(key) {
       if (!key) return;
-      if (slotAssignmentClipboard !== null) {
+      if (slotClipboardLastType === "assignment" && slotAssignmentClipboard !== null) {
         if (isAssignmentBlocked(key)) return;
         const namesNow = getNames();
         const ids = filterToNamedPersonIndices(namesNow, [...slotAssignmentClipboard]);
@@ -1401,7 +1408,7 @@
         else assignments[key] = { personIndexes: ids };
         return;
       }
-      if (slotCellFormatClipboard !== null) {
+      if (slotClipboardLastType === "format" && slotCellFormatClipboard !== null) {
         applySlotCellModeFromPaste(key, slotCellFormatClipboard);
       }
     }
@@ -1513,6 +1520,7 @@
       const namesNow = getNames();
       const ids = filterToNamedPersonIndices(namesNow, getSlotPersonIndexes(assignments[key]));
       slotAssignmentClipboard = [...ids];
+      slotClipboardLastType = "assignment";
       slotCopyHighlightKey = key;
       showToast(ids.length ? "이 칸 배정을 복사했습니다." : "빈 칸을 복사했습니다. 붙여넣기 시 배정이 비워집니다.");
     }
@@ -1947,7 +1955,11 @@
             pointerPaint.isEraseDrag = Boolean(ev.altKey);
             pointerPaint.isPasteDrag =
               !pointerPaint.isEraseDrag &&
-              Boolean(ev.ctrlKey && (slotAssignmentClipboard !== null || slotCellFormatClipboard !== null));
+              Boolean(
+                ev.ctrlKey &&
+                  ((slotClipboardLastType === "assignment" && slotAssignmentClipboard !== null) ||
+                    (slotClipboardLastType === "format" && slotCellFormatClipboard !== null))
+              );
             pointerPaint.startKey = key;
             pointerPaint.startX = ev.clientX;
             pointerPaint.startY = ev.clientY;
